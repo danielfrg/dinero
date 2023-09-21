@@ -32,5 +32,13 @@ class Application:
     def config(self) -> RootConfig:
         return self.config_file.model
 
+    @property
+    def config_dir(self):
+        return self.config_file.configdir()
+
+    @property
+    def cache_dir(self):
+        return self.config_file.configdir() / "cache"
+
 
 Dinero = Application

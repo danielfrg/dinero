@@ -55,12 +55,11 @@ class ConfigFile:
     def update(self):
         self.save()
 
-    @property
-    def cachedir(self):
-        platform_dir = ResultPD("dinero", roaming=True)
-        return Path(platform_dir.user_config_dir) / "cache"
+    @classmethod
+    def configdir(cls) -> Path:
+        platform_dir = ResultPD("dinero")
+        return Path(platform_dir.user_config_dir)
 
     @classmethod
     def get_default_location(cls) -> Path:
-        platform_dir = ResultPD("dinero", roaming=True)
-        return Path(platform_dir.user_config_dir) / "config.toml"
+        return cls.configdir() / "config.toml"

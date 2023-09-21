@@ -22,7 +22,7 @@ def get_data(no_cache=False, only_cache=False, years=None):
     if no_cache:
         df = get_dataframe(years=years, use_cache=False)
     if only_cache:
-        df = load_data(app.config_file.cachedir / "data.csv")
+        df = load_data(app.cache_dir / "data.csv")
     else:
         df = get_dataframe(years=years)
     return df
@@ -46,7 +46,7 @@ def get_dataframe(years=None, use_cache=True):
         # If its an older year, read from cache if available
         # If its not in the cache download it and cache it
         if year < today_year and use_cache:
-            filepath = app.config_file.cachedir / f"{year}.csv"
+            filepath = app.cache_dir / f"{year}.csv"
 
             if os.path.exists(filepath):
                 # Read cached file
@@ -56,8 +56,8 @@ def get_dataframe(years=None, use_cache=True):
                 # Cached file not found -> download and cache
                 year_df = get_table(table_name)
 
-                if not os.path.exists(app.config_file.cachedir):
-                    os.makedirs(app.config_file.cachedir, exist_ok=True)
+                if not os.path.exists(app.cache_dir):
+                    os.makedirs(app.cache_dir, exist_ok=True)
 
                 log.info("Saving cache", year=year, filepath=filepath)
                 year_df.to_csv(filepath, index=False)

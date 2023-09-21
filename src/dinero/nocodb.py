@@ -6,6 +6,7 @@ from nocodb.api import NocoDBProject
 from nocodb.infra.requests_client import NocoDBRequestsClient
 from nocodb.nocodb import APIToken
 from pendulum import Date
+from dinero import rules
 
 from dinero.application import Application
 
@@ -94,7 +95,7 @@ class TransactionsTable:
         -------
             (existing, new, error): tuple of 3 lists, each list are Record
         """
-        records = [Record.from_plaid_transaction(tr) for tr in transactions]
+        records = [Record.from_plaid_transaction(self.app, tr) for tr in transactions]
 
         self.new, self.existing, self.errored = [], [], []
         for record in records:
@@ -151,10 +152,11 @@ class Record(dict):
         return self["Description"]
 
     @classmethod
-    def from_plaid_transaction(cls, plaid_transaction):
+    def from_plaid_transaction(cls, app: Application, plaid_transaction):
         new = cls()
+        description = plaid_transaction.name
         category, subcategory = "", ""
-        # category, subcategory = rules.categories_for_transaction(description)
+        category, subcategory = rules.categories_for_transaction(app, description)
 
         new.update(
             {
@@ -162,7 +164,7 @@ class Record(dict):
                 "Amount": plaid_transaction.amount,
                 "Category": category,
                 "Date": plaid_transaction.date,
-                "Description": plaid_transaction.name,
+                "Description": description,
                 "Subcategory": subcategory,
             }
         )

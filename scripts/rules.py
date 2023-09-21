@@ -2,10 +2,15 @@ import json
 
 import click
 
-from dinero import analysis, utils
+from dinero import Application, analysis
+from dinero.utils import base as baseutils
 
-SOURCE = "cache/all.csv"
-TARGET = "data/generated_rules.json"
+app = Application()
+
+SOURCE = "data/all.csv"
+
+
+TARGET = app.config_dir / "category_rules.json"
 
 data = analysis.load_data(SOURCE)
 groups = analysis.group_desc_categories(data)
@@ -16,7 +21,7 @@ click.echo("Most common transactions:")
 click.echo(most_common)
 
 
-if utils.noninteractive() or click.confirm(
+if baseutils.noninteractive() or baseutils.query_yes_no(
     '\nDo you want to save these rules to "%s"?' % TARGET
 ):
     with open(TARGET, "w") as f:
