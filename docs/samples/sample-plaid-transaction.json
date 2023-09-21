@@ -1,0 +1,37 @@
+{
+    "account_id": "XXXXXXXXXX",
+    "account_owner": None,
+    "amount": -1,
+    "category": [
+        "Transfer",
+        "Deposit"
+    ],
+    "category_id": "20000000",
+    "date": "2019-01-31",
+    "iso_currency_code": "USD",
+    "location": {
+        "address": None,
+        "city": None,
+        "lat": None,
+        "lon": None,
+        "state": None,
+        "store_number": None,
+        "zip": None
+    },
+    "name": "AMAZON",
+    "payment_meta": {
+        "by_order_of": None,
+        "payee": None,
+        "payer": None,
+        "payment_method": None,
+        "payment_processor": None,
+        "ppd_id": None,
+        "reason": None,
+        "reference_number": None
+    },
+    "pending": False,
+    "pending_transaction_id": None,
+    "transaction_id": "XXXXXXXXXXXXXXXXX",
+    "transaction_type": "special",
+    "unofficial_currency_code": None
+}

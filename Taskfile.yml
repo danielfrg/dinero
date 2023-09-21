@@ -1,0 +1,28 @@
+version: "3"
+
+tasks:
+  transactions:
+    cmds:
+      - python scripts/transactions.py
+
+  rules:
+    cmds:
+      - python scripts/rules.py
+
+  dataset:
+    cmds:
+      - python scripts/mkdataset.py
+
+  fmt:
+    ignore_error: true
+    cmds:
+      - rye run ruff --fix dinero
+      - rye run black dinero
+      - rye run isort dinero
+
+  check:
+    ignore_error: true
+    cmds:
+      - rye run ruff dinero
+      - rye run black dinero --check
+      - rye run isort dinero --check-only

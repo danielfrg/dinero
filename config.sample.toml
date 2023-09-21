@@ -1,0 +1,18 @@
+[plaid]
+client_id = ""
+secret = ""
+env = "development"
+products = "transactions"
+
+[plaid.tokens]
+BANK_1 = "access-development-XXXXXXXXXXXXXXXX"
+BANK_2 = "access-development-XXXXXXXXXXXXXXXX"
+
+[plaid.account_id_to_name]
+THIS_IS_A_LONG_ID_1_XXXXXXXXXXXXXXXXXXXXXX = "Bank 1 Checking"
+THIS_IS_A_LONG_ID_2_XXXXXXXXXXXXXXXXXXXXXX = "Bank 2 Credit"
+
+[nocodb]
+host = "http://nocodb.local"
+project = "dinero"
+token = "GENERATED_TOKEN"
