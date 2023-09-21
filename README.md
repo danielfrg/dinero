@@ -5,9 +5,11 @@ Your own Mint/YNAB, self hosted.
 
 - [Plaid](https://plaid.com) for collecting transactions from financial institutions
 - [NocoDB](https://nocodb.com) for storing transactions and making nice views of them
-  - I use this instead of Google Sheets because it allows me to easily group by
-    Account, Category and more
-  - Initially I used Airtable but the new pricing made it not worth it
+  - I use this instead of Google Sheets because it gives a better view
+    with filters, groups and views by Account, Category and more
+  - You can see some screenshots of how it looks in the [docs directory](/docs).
+  - Your imagination is the limit here, you can create dashboards, reports, etc
+  - I also use Apache Superset to create dashboards based on this data
 
 Inspired by [yyx990803/build-your-own-mint](https://github.com/yyx990803/build-your-own-mint).
 
@@ -121,5 +123,6 @@ THIS_IS_A_LONG_ID_1_XXXXXXXXXXXXXXXXXXXXXX = "Bank 1 Checking"
 While I am happy to accept any contributions this is 100% tailored to how I use
 it so I might reject stuff I won't use.
 
-If you want to do other things such as connecting to Airtable you should
-fork this repo and make your own changes.
+If you want to do other things such as connecting to Airtable
+(initially I used Airtable but the new pricing made it not worth it)
+you should fork this repo and make your own changes.
