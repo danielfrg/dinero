@@ -65,6 +65,16 @@ Generate a dataset with all transactions in CSV and SQLite:
 task dataset
 ```
 
+### Other
+
+There is a handy function to generate a Pandas DataFrame with all transactions:
+I use this to do some analysis in a Jupyter Notebook.
+
+```python
+from dinero import analysis
+df = analysis.get_dataframe()
+```
+
 ## Setup
 
 ### Plaid Setup

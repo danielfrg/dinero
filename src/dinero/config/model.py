@@ -22,13 +22,8 @@ class NocoDB(BaseModel):
 
 
 class RootConfig(BaseSettings):
-    cache_dir: str = "./cache"
     plaid: Plaid
     nocodb: NocoDB
 
     class Config:
         env_prefix = "dinero_"
-
-    @property
-    def cachedir(self):
-        return repo_root / self.cache_dir

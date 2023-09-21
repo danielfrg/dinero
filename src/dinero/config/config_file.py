@@ -4,6 +4,11 @@ from typing import Union, cast
 from dinero.config.model import RootConfig
 from dinero.utils.fs import Path, load_toml_data
 
+from platformdirs import PlatformDirs as ResultPD
+
+if sys.platform == "darwin":
+    from platformdirs.unix import Unix as ResultPD
+
 
 class ConfigFile:
     model: RootConfig
@@ -50,12 +55,12 @@ class ConfigFile:
     def update(self):
         self.save()
 
+    @property
+    def cachedir(self):
+        platform_dir = ResultPD("dinero", roaming=True)
+        return Path(platform_dir.user_config_dir) / "cache"
+
     @classmethod
     def get_default_location(cls) -> Path:
-        from platformdirs import PlatformDirs as Result
-
-        if sys.platform == "darwin":
-            from platformdirs.unix import Unix as Result
-
-        platform_dir = Result("dinero", roaming=True)
+        platform_dir = ResultPD("dinero", roaming=True)
         return Path(platform_dir.user_config_dir) / "config.toml"
