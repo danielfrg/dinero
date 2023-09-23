@@ -86,6 +86,8 @@ def get_table(table_name):
 
     table = TransactionsTable(app, table_name)
     for record in table.records:
+        del record["ncRecordId"]
+        del record["ncRecordHash"]
         new_row = pd.DataFrame([record])
         data = pd.concat([data, new_row], ignore_index=True, sort=False)
 
