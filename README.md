@@ -11,6 +11,8 @@ Your own Mint/YNAB, self hosted.
   - Your imagination is the limit here, you can create dashboards, reports, etc
   - I also use Apache Superset to create dashboards based on this data
 
+You can read more about how I use this [in my wiki](https://wiki.danielfrg.com/homelab/dinero/).
+
 Inspired by [yyx990803/build-your-own-mint](https://github.com/yyx990803/build-your-own-mint).
 
 ## Usage
