@@ -7,13 +7,10 @@ Your own Mint/YNAB, self hosted.
 - [NocoDB](https://nocodb.com) for storing transactions and making nice views of them
   - I use this instead of Google Sheets because it gives a better view
     with filters, groups and views by Account, Category and more
-  - You can see some screenshots of how it looks in the [docs directory](/docs).
+  - You can read more about how I use this + some screenshots [in my wiki](https://wiki.danielfrg.com/homelab/dinero/).
   - Your imagination is the limit here, you can create dashboards, reports, etc
   - I also use Apache Superset to create dashboards based on this data
-
-You can read more about how I use this [in my wiki](https://wiki.danielfrg.com/homelab/dinero/).
-
-Inspired by [yyx990803/build-your-own-mint](https://github.com/yyx990803/build-your-own-mint).
+  - Inspired by [yyx990803/build-your-own-mint](https://github.com/yyx990803/build-your-own-mint).
 
 ## Usage
 
