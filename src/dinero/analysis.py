@@ -21,7 +21,7 @@ app = Application()
 def get_data(no_cache=False, only_cache=False, years=None):
     if no_cache:
         df = get_dataframe(years=years, use_cache=False)
-    if only_cache:
+    elif only_cache:
         df = load_data(app.cache_dir / "data.csv")
     else:
         df = get_dataframe(years=years)
