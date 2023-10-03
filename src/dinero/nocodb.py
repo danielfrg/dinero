@@ -6,8 +6,8 @@ from nocodb.api import NocoDBProject
 from nocodb.infra.requests_client import NocoDBRequestsClient
 from nocodb.nocodb import APIToken
 from pendulum import Date
-from dinero import rules
 
+from dinero import rules
 from dinero.application import Application
 
 log = structlog.get_logger()
@@ -160,12 +160,13 @@ class Record(dict):
 
         new.update(
             {
-                "Account": plaid_transaction.account_name,
-                "Amount": plaid_transaction.amount,
-                "Category": category,
                 "Date": plaid_transaction.date,
                 "Description": description,
+                "Category": category,
                 "Subcategory": subcategory,
+                "Amount": plaid_transaction.amount,
+                "Notes": "new",
+                "Account": plaid_transaction.account_name,
             }
         )
         return new
