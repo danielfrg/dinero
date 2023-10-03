@@ -50,7 +50,7 @@ def get_dataframe(years=None, use_cache=True):
 
             if os.path.exists(filepath):
                 # Read cached file
-                log.info("Reading cache", year=year, filepath=filepath)
+                # log.info("Reading cache", year=year, filepath=filepath)
                 year_df = load_data(filepath)
             else:
                 # Cached file not found -> download and cache
@@ -68,6 +68,8 @@ def get_dataframe(years=None, use_cache=True):
         data = pd.concat([data, year_df])
 
     data = data.sort_values("date", ascending=False)
+    data = data.reset_index()
+    del data["index"]
     return data
 
 
@@ -92,10 +94,8 @@ def get_table(table_name):
         data = pd.concat([data, new_row], ignore_index=True, sort=False)
 
     data.columns = data.columns.str.lower()
-
     data.date = pd.to_datetime(data.date)
     data.subcategory = data.subcategory.fillna("")
-
     data = data.sort_values("date", ascending=False)
     return data
 
@@ -104,6 +104,7 @@ def load_data(filepath):
     """Read a CSV saved from `make_dataframe`"""
     data = pd.read_csv(filepath)
     data.date = pd.to_datetime(data.date)
+    data.columns = data.columns.str.lower()
     return data
 
 

@@ -16,4 +16,4 @@ df.to_csv(file_path, index=False)
 engine = create_engine("sqlite:///data/transactions.db")
 
 with engine.connect() as conn:
-    df.to_sql("transactions", conn, if_exists="replace")
+    df.to_sql("transactions", conn, if_exists="replace", index=False)
