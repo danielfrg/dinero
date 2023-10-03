@@ -9,7 +9,7 @@ if not os.path.exists("data"):
 
 file_path = "data/all.csv"
 
-df = analysis.get_dataframe()
+df = analysis.get_dataframe(use_cache=False)
 df.to_csv(file_path, index=False)
 
 
