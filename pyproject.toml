@@ -23,9 +23,11 @@ dependencies = [
   "pydantic>=1.10.0, <2.0.0",
   "structlog>=21.1.0, <22",
   "tomli_w>=1.0.0",
-  "nocodb>=1.0.1",
+  "nocodb @ git+https://github.com/ElChicoDePython/python-nocodb",
   "sqlalchemy>=2.0.21",
   "platformdirs>=3.10.0",
+  "psycopg>=3.1.12",
+  "fire>=0.5.0",
 ]
 dynamic = ["version"]
 
@@ -46,6 +48,9 @@ path = "src/dinero/__about__.py"
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[project.scripts]
+dinero = "dinero.cli.main:main"
 
 [project.urls]
 Documentation = "https://github.com/danielfrg/dinero#readme"
