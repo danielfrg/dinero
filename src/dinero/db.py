@@ -103,14 +103,14 @@ class Transaction(Base):
 
     __tablename__ = "transactions"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    date: Mapped[datetime.date] = mapped_column(DateTime)
-    description: Mapped[str] = mapped_column(String(100))
-    category: Mapped[str] = mapped_column(String(30))
-    subcategory: Mapped[str] = mapped_column(String(30))
-    amount: Mapped[float] = mapped_column(Double())
-    notes: Mapped[str] = mapped_column(String(100))
-    account: Mapped[str] = mapped_column(String(30))
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    date: Mapped[datetime.date] = mapped_column(DateTime, nullable=True)
+    description: Mapped[str] = mapped_column(String(1000), nullable=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=True)
+    subcategory: Mapped[str] = mapped_column(String(50), nullable=True)
+    amount: Mapped[float] = mapped_column(Double(), nullable=True)
+    notes: Mapped[str] = mapped_column(String(1000), nullable=True)
+    account: Mapped[str] = mapped_column(String(50), nullable=True)
 
     def __eq__(self, other_record):
         # Checks uniqueness based on: Date, Account Name, Description, Amount
@@ -152,4 +152,4 @@ class Transaction(Base):
         return new
 
     def __repr__(self):
-        return f"Transaction: {self.date} {self.description} {self.amount}"
+        return f"Transaction({self.id}): {self.date} {self.description} {self.amount}"

@@ -11,7 +11,7 @@ def mkdataset():
 
     file_path = "data/all.csv"
 
-    df = analysis.get_dataframe(use_cache=False)
+    df = analysis.get_dataframe()
     df.to_csv(file_path, index=False)
 
     engine = create_engine("sqlite:///data/transactions.db")
