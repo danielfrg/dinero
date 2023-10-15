@@ -3,7 +3,8 @@ import logging
 import pendulum
 import structlog
 
-from dinero import Application, nocodb, plaid
+from dinero import Application, db, plaid
+from dinero.cli import utils
 from dinero.utils import base as baseutils
 
 structlog.configure(
@@ -26,8 +27,7 @@ def transactions():
     # Get new transactions from plaid
     all_transactions = plaid.get_all_transactions(app, date=DATE, days=DAYS)
 
-    # Load current year table
-    table = nocodb.get_table(app, date=DATE)
+    table = db.Table(app)
 
     # Print individual accounts
     groups = all_transactions.group_by_account()
@@ -36,32 +36,32 @@ def transactions():
         print(account_name)
         print("-" * 80)
 
-        new, existing, errored = table.prepare(account_transactions.not_pending)
+        new, existing = table.prepare(account_transactions.not_pending)
 
         n_transactions = len(account_transactions)
         n_pending = len(account_transactions.pending)
-        n_new, n_existing, n_error = len(new), len(existing), len(errored)
+        n_new, n_existing = len(new), len(existing)
 
         log.info("Queried transactions", n=n_transactions)
         log.info("Pending transactions", n=n_pending)
 
         for transaction in account_transactions.pending:
-            print(transaction)
+            log.info("Transaction", transaction=transaction)
         log.info("New transactions to be added", n=n_new)
         for transaction in new:
             log.info("Transaction", transaction=transaction)
         log.info("Existing transactions", n=n_existing)
-        log.info("Error transactions", n=n_error)
-        for transaction in errored:
-            print(transaction)
+        # for transaction in existing:
+        #     log.info("Transaction", transaction=transaction)
 
-        assert n_transactions == n_pending + n_new + n_existing + n_error
+        assert n_transactions == n_pending + n_new + n_existing
         print()
+        break
 
     # Print account summary
     new_records = all_transactions if ADD_PENDING else all_transactions.not_pending
 
-    new, existing, errored = table.prepare(new_records)
+    new, existing = table.prepare(new_records)
 
     len_table = len(table)
     n_transactions = len(all_transactions)
@@ -69,7 +69,6 @@ def transactions():
     n_pending = len(all_transactions.pending)
     n_new = len(new)
     n_existing = len(existing)
-    n_error = len(errored)
 
     start_date, end_date = baseutils.get_dates_from_delta(date=DATE, days=DAYS)
 
@@ -83,12 +82,11 @@ def transactions():
     print("Transactions analysed (pending {}): {}".format(ADD_PENDING, n_records))
     print("New records to be inserted: {}".format(n_new))
     print("Existing transactions: {}".format(n_existing))
-    print("Errors transactions (not valid dates for table): {}".format(n_error))
     print()
 
-    assert n_records == n_new + n_existing + n_error
+    assert n_records == n_new + n_existing
 
-    if baseutils.noninteractive() or baseutils.query_yes_no(
+    if utils.noninteractive() or utils.query_yes_no(
         "Insert transactions to the Table?"
     ):
         print("Inserting %i new records" % len(table.new))

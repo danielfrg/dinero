@@ -5,14 +5,13 @@ env = "development"
 products = "transactions"
 
 [plaid.tokens]
-BANK_1 = "access-development-XXXXXXXXXXXXXXXX"
-BANK_2 = "access-development-XXXXXXXXXXXXXXXX"
+bank_1 = "access-development-XXXXXXXXXXXXXXXX"
+bank_2 = "access-development-YYYYYYYYYYYYYYYY"
 
 [plaid.account_id_to_name]
 THIS_IS_A_LONG_ID_1_XXXXXXXXXXXXXXXXXXXXXX = "Bank 1 Checking"
-THIS_IS_A_LONG_ID_2_XXXXXXXXXXXXXXXXXXXXXX = "Bank 2 Credit"
+THIS_IS_A_LONG_ID_2_YYYYYYYYYYYYYYYYYYYYYY = "Bank 2 Credit Card"
 
-[nocodb]
-host = "http://nocodb.local"
-project = "dinero"
-token = "GENERATED_TOKEN"
+[database]
+connection_string = "sqlite:///data/dinero.db"
+# connection_string = "postgresql+psycopg://user:password@localhost:5432/dinero"

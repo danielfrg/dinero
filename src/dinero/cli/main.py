@@ -1,13 +1,22 @@
 import fire
 
 from dinero import Application
+from dinero.cli.db import init_db
 from dinero.cli.mkdataset import mkdataset
-from dinero.cli.transactions import transactions
 from dinero.cli.rules import gen_rules
+from dinero.cli.transactions import transactions
 
 
-def hello(name):
-    return "Hello {name}!".format(name=name)
+def main():
+    fire.Fire(
+        {
+            "init-db": init_db,
+            "config": config,
+            "mkdataset": mkdataset,
+            "transactions": transactions,
+            "rules": gen_rules,
+        }
+    )
 
 
 def config():
@@ -15,18 +24,6 @@ def config():
 
     print(app.config_file_path)
     print(app.config)
-
-
-def main():
-    fire.Fire(
-        {
-            "hello": hello,
-            "config": config,
-            "mkdataset": mkdataset,
-            "transactions": transactions,
-            "rules": gen_rules,
-        }
-    )
 
 
 if __name__ == "__main__":

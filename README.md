@@ -4,20 +4,77 @@ Tools and scripts to manage my personal finances.
 Your own Mint/YNAB, self hosted.
 
 - [Plaid](https://plaid.com) for collecting transactions from financial institutions
-- [NocoDB](https://nocodb.com) for storing transactions and making nice views of them
-  - I use this instead of Google Sheets because it gives a better view
-    with filters, groups and views by Account, Category and more
+- SQL Database for storing transactions
+  - I personally use Postgres but any SQLAlchemy compatible DB should work
+  - This README uses SQLite
+  - I use [NocoDB](https://nocodb.com) as a viewer/explorer with filters and groups
+    by Account, Category and so on
+  - I use [Metabase](https://www.metabase.com/) to create dashboards
+  - Your imagination is the limit here!
   - You can read more about how I use this + some screenshots [in my wiki](https://wiki.danielfrg.com/homelab/dinero/).
-  - Your imagination is the limit here, you can create dashboards, reports, etc
-  - I also use Apache Superset to create dashboards based on this data
-  - Inspired by [yyx990803/build-your-own-mint](https://github.com/yyx990803/build-your-own-mint).
+- Inspired by [yyx990803/build-your-own-mint](https://github.com/yyx990803/build-your-own-mint).
+
+## Requirements
+
+### Plaid
+
+- Create a [Plaid account](https://dashboard.plaid.com/)
+- You need development access to handle multiple accounts
+  - You can use it on development mode for free up to 100 accounts
+- I asked for production access and it was simple, just fill the form and say
+  you are not a company and that you will use it for personal use
+- Get your `client_id` and `secret` from the [Plaid dashboard](https://dashboard.plaid.com/developers/keys)
+
+#### Logging in to Banks
+
+Use the [plaid/quickstart](https://github.com/plaid/quickstart.git)
+to login to your institution.
+
+Once you've linked the bank save the `ACCESS_TOKEN`. in the config file. See [settings](#config) below.
+
+### Database
+
+Simply write the [SQLAlchemy](https://www.sqlalchemy.org) connection string
+in the config file.
+
+## Config
+
+The project reads it's config from `~/.config/dinero/config.toml`.
+You can see a sample in [config.sample.toml](config.sample.toml).
+
+For Plaid you need to set the token for each institution:
+
+```toml
+[plaid.tokens]
+bank_1 = "access-development-XXXXXXXXXXXXXXXX"
+bank_2 = "access-development-YYYYYYYYYYYYYYYY"
+```
+
+And a mapping to make the Account ID human readable:
+
+```toml
+[plaid.account_id_to_name]
+THIS_IS_A_LONG_ID_1_XXXXXXXXXXXXXXXXXXXXXX = "Bank 1 Checking"
+THIS_IS_A_LONG_ID_2_YYYYYYYYYYYYYYYYYYYYYY = "Bank 2 Credit Card"
+```
 
 ## Usage
+
+After you have the requirements and config file.
+
+Install by cloning the repo and installing the dependencies using your favorite
+Python environment manager.
+
+Create DB and tables:
+
+```terminal
+dinero init-db
+```
 
 Get new transactions and add them to the database:
 
 ```terminal
-task transactions
+dinero transactions
 ```
 
 Example output:
@@ -74,47 +131,6 @@ I use this to do some analysis in a Jupyter Notebook.
 ```python
 from dinero import analysis
 df = analysis.get_dataframe()
-```
-
-## Setup
-
-### Plaid Setup
-
-- Create a [Plaid account](https://dashboard.plaid.com/)
-- You would need development access to handle multiple accounts
-- Get your `client_id` and `secret` from the [Plaid dashboard](https://dashboard.plaid.com/developers/keys)
-
-#### Logging in to Banks
-
-Use the [plaid/quickstart](https://github.com/plaid/quickstart.git)
-to login to your institution.
-
-Once you've linked the bank save the `ACCESS_TOKEN`. See [settings](#settings) below.
-
-### NocoDB
-
-Generate a Token using the UI and add it to the [settings](#settings).
-
-Create one project `dinero` and one table per year inside that project.
-Transactions will be added to the table for the current year.
-
-## Settings
-
-The project reads it's config from `~/.config/dinero/config.toml`.
-You can see a sample in [config.sample.toml](config.sample.toml).
-
-For Plaid you need to set the token:
-
-```toml
-[plaid.tokens]
-BANK_1 = "access-development-XXXXXXXXXXXXXXXX"
-```
-
-And a mapping to make the Account ID human readable:
-
-```toml
-[plaid.account_id_to_name]
-THIS_IS_A_LONG_ID_1_XXXXXXXXXXXXXXXXXXXXXX = "Bank 1 Checking"
 ```
 
 ## Contributions

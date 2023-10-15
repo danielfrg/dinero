@@ -13,7 +13,7 @@ def categories_for_transaction(app: Application, description):
     based on the existing rules
     """
 
-    generated_rules_path = app.config_dir / "../data/category_rules.json"
+    generated_rules_path = app.config_dir / "category_rules.json"
 
     if os.path.exists(generated_rules_path):
         with open(generated_rules_path, "r") as fp:

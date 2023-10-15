@@ -1,48 +1,13 @@
-import os
-import sys
+import calendar
 import typing
 from calendar import monthrange
+from datetime import datetime
 
 import pendulum
 from pendulum import Date
 
-
-def noninteractive():
-    dinero_yes = os.environ.get("DINERO_YES", "0")
-    if dinero_yes != "0":
-        return True
-    return False
-
-
-def query_yes_no(question, default="yes"):
-    """Ask a yes/no question via raw_input() and return their answer.
-
-    "question" is a string that is presented to the user.
-    "default" is the presumed answer if the user just hits <Enter>.
-            It must be "yes" (the default), "no" or None (meaning
-            an answer is required of the user).
-
-    The "answer" return value is True for "yes" or False for "no".
-    """
-    valid = {"yes": True, "y": True, "ye": True, "no": False, "n": False}
-    if default is None:
-        prompt = " [y/n] "
-    elif default == "yes":
-        prompt = " [Y/n] "
-    elif default == "no":
-        prompt = " [y/N] "
-    else:
-        raise ValueError("invalid default answer: '%s'" % default)
-
-    while True:
-        sys.stdout.write(question + prompt)
-        choice = input().lower()
-        if default is not None and choice == "":
-            return valid[default]
-        elif choice in valid:
-            return valid[choice]
-        else:
-            sys.stdout.write("Please respond with 'yes' or 'no' " "(or 'y' or 'n').\n")
+today = datetime.now()
+today = datetime(today.year, today.month, today.day)
 
 
 def get_dates_from_month(date: str | Date):
@@ -74,3 +39,35 @@ def get_dates_from_delta(date: str | Date, days=30):
         year=end_date.year, month=end_date.month, day=end_date.day
     )
     return start_date, end_date
+
+
+def this_or_last_month(target_day=None):
+    if target_day is None:
+        target_day = today.day
+
+    if target_day == -1:
+        last_day_of_today_month = calendar.monthrange(today.year, today.month)[1]
+        if today.day < last_day_of_today_month:
+            if today.month == 1:
+                target_month = 12
+            else:
+                target_month = today.month - 1
+        else:
+            target_month = today.month
+            print(target_month)
+        target_day = calendar.monthrange(today.year, target_month)[1]
+    else:
+        if target_day <= today.day:
+            target_month = today.month
+        else:
+            if today.month == 1:
+                target_month = 12
+            else:
+                target_month = today.month - 1
+
+    if target_day >= today.day and target_month == 12:
+        target_year = today.year - 1
+    else:
+        target_year = today.year
+
+    return datetime(target_year, target_month, target_day)
