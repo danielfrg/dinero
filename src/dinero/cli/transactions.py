@@ -56,7 +56,6 @@ def transactions():
 
         assert n_transactions == n_pending + n_new + n_existing
         print()
-        break
 
     # Print account summary
     new_records = all_transactions if ADD_PENDING else all_transactions.not_pending
