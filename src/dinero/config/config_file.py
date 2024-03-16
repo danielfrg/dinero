@@ -1,4 +1,6 @@
 import sys
+import os
+from pathlib import Path
 from typing import Union, cast
 
 from dinero.config.model import RootConfig
@@ -62,4 +64,9 @@ class ConfigFile:
 
     @classmethod
     def get_default_location(cls) -> Path:
+        key = "DINERO_CONFIG_FILE"
+        env_value = os.getenv(key)
+        if env_value is not None and os.path.exists(env_value):
+            return Path(env_value)
+
         return cls.configdir() / "config.toml"

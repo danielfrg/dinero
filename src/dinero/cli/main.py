@@ -7,11 +7,11 @@ from dinero.cli.rules import gen_rules
 from dinero.cli.transactions import transactions
 
 
-def main():
+def main(config=None):
     fire.Fire(
         {
             "init-db": init_db,
-            "config": config,
+            "config": config_cmd,
             "mkdataset": mkdataset,
             "transactions": transactions,
             "rules": gen_rules,
@@ -19,7 +19,7 @@ def main():
     )
 
 
-def config():
+def config_cmd():
     app = Application()
 
     print(app.config_file_path)
