@@ -18,7 +18,7 @@ app = Application()
 
 
 def get_dataframe():
-    """Iterate all the airtables and put it into a pandas.DataFrame"""
+    """Get data from the DB and reteurn a pandas.DataFrame"""
     con = app.config.database.connection_string
     return pd.read_sql(Transaction.__tablename__, con=con)
 
@@ -36,3 +36,12 @@ def select(data=None, year=None, month=None, before=None, after=None, account=No
     if before:
         selected = selected[selected.date <= before]
     return selected
+
+
+def group_desc_categories(data):
+    """Group the data by
+    Useful to see the most common transactions and generate rules
+    """
+    groups = data.groupby(["description", "category", "subcategory"]).count()
+    groups = groups.amount.sort_values(ascending=False)
+    return groups[groups >= 3]

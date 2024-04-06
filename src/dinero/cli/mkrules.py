@@ -3,17 +3,15 @@ import json
 import click
 
 from dinero import Application, analysis
-from dinero.utils import base as baseutils
+from dinero.cli import utils
 
 
 def gen_rules():
     app = Application()
 
-    SOURCE = "data/all.csv"
-
     TARGET = app.config_dir / "category_rules.json"
 
-    data = analysis.load_data(SOURCE)
+    data = analysis.get_dataframe()
     groups = analysis.group_desc_categories(data)
     most_common = groups[groups >= 3]
     most_common = most_common.reset_index()  # Remove MultiIndex
@@ -21,7 +19,7 @@ def gen_rules():
     click.echo("Most common transactions:")
     click.echo(most_common)
 
-    if baseutils.noninteractive() or baseutils.query_yes_no(
+    if utils.noninteractive() or utils.query_yes_no(
         '\nDo you want to save these rules to "%s"?' % TARGET
     ):
         with open(TARGET, "w") as f:
