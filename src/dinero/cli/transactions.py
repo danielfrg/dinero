@@ -17,7 +17,7 @@ log = structlog.get_logger()
 DATE = pendulum.now()
 # Explicitly set date
 # DATE = pendulum.datetime(2022, 12, 31)
-DAYS = 30
+DAYS = 90
 ADD_PENDING = False
 
 
