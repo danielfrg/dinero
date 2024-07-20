@@ -80,7 +80,6 @@ dinero transactions
 Example output:
 
 ```terminal
-task: [transactions] python scripts/transactions.py
 2023-09-21 11:06.45 [info     ] Transactions downloaded        name=XXX records=49
 2023-09-21 11:06.45 [info     ] Transactions pending           name=XXX records=1
 2023-09-21 11:06.45 [info     ] Transactions not pending       name=XXX records=48
@@ -114,13 +113,13 @@ Insert transactions to the Table? [Y/n]
 Generate a set of simple rules that will be used to categorize transactions:
 
 ```terminal
-task rules
+just rules
 ```
 
 Generate a dataset with all transactions in CSV and SQLite:
 
 ```terminal
-task dataset
+just dataset
 ```
 
 ### Other
