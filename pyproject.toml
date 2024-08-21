@@ -32,7 +32,7 @@ dependencies = [
 ]
 dynamic = ["version"]
 
-[tool.rye]
+[tool.uv]
 managed = true
 dev-dependencies = [
   "black~=23.3.0",

@@ -1,3 +1,3 @@
 
 transactions:
-  rye run dinero transactions
+  uv run dinero transactions
