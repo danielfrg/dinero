@@ -179,7 +179,7 @@ class Transaction(object):
         new.amount = values["amount"]
         new.category = values["category"]
         new.category_id = values["category_id"]
-        new.date = pendulum.parse(values["date"])
+        new.date = pendulum.parse(values["date"], tz=app.config.timezone)
         new.name = values["name"]
         new.pending = values["pending"]
         return new

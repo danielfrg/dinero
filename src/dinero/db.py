@@ -104,7 +104,7 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    date: Mapped[datetime.date] = mapped_column(DateTime, nullable=True)
+    date: Mapped[datetime.date] = mapped_column(DateTime(timezone=True), nullable=True)
     description: Mapped[str] = mapped_column(String(1000), nullable=True)
     category: Mapped[str] = mapped_column(String(50), nullable=True)
     subcategory: Mapped[str] = mapped_column(String(50), nullable=True)

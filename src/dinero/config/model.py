@@ -20,5 +20,7 @@ class RootConfig(BaseSettings):
     plaid: Plaid
     database: Database
 
+    timezone: str = "US/Central"
+
     class Config:
         env_prefix = "dinero_"
