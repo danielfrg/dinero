@@ -20,11 +20,15 @@ app = Application()
 def get_dataframe():
     """Get data from the DB and reteurn a pandas.DataFrame"""
     con = app.config.database.connection_string
-    return pd.read_sql(Transaction.__tablename__, con=con)
+    df = pd.read_sql(Transaction.__tablename__, con=con)
+    return df
 
 
 def select(data=None, year=None, month=None, before=None, after=None, account=None):
     selected = data if data is not None else get_dataframe()
+
+    before = pd.to_datetime(before)
+    after = pd.to_datetime(after)
     if account:
         selected = selected[selected.account == account]
     if year:

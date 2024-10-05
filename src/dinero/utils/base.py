@@ -3,12 +3,13 @@ import typing
 from calendar import monthrange
 from datetime import datetime
 
+import pandas as pd
 import pendulum
 from pendulum import Date
 
 today = datetime.now()
-today = datetime(today.year, today.month, today.day)
-
+today = datetime(today.year, today.month, today.day, 23, 59, 59)
+today = pd.to_datetime(today, utc=True)
 
 def get_dates_from_month(date: str | Date):
     """
@@ -54,7 +55,6 @@ def this_or_last_month(target_day=None):
                 target_month = today.month - 1
         else:
             target_month = today.month
-            print(target_month)
         target_day = calendar.monthrange(today.year, target_month)[1]
     else:
         if target_day <= today.day:
@@ -70,4 +70,5 @@ def this_or_last_month(target_day=None):
     else:
         target_year = today.year
 
-    return datetime(target_year, target_month, target_day)
+    dt = datetime(target_year, target_month, target_day, 23, 59, 59)
+    return pd.to_datetime(dt, utc=True)
