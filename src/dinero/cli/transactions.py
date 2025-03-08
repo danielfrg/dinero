@@ -1,18 +1,10 @@
-import logging
-
 import pendulum
-import structlog
+from loguru import logger
 
 from dinero import Application, db, plaid
 from dinero.cli import utils
 from dinero.utils import base as baseutils
 
-structlog.configure(
-    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-)
-log = structlog.get_logger()
-
-##
 
 DATE = pendulum.now()
 # Explicitly set date
@@ -42,17 +34,19 @@ def transactions():
         n_pending = len(account_transactions.pending)
         n_new, n_existing = len(new), len(existing)
 
-        log.info("Queried transactions", n=n_transactions)
-        log.info("Pending transactions", n=n_pending)
+        logger.bind(n=n_transactions).info("Queried transactions")
+        logger.bind(n=n_pending).info("Pending transactions")
 
         for transaction in account_transactions.pending:
-            log.info("Transaction", transaction=transaction)
-        log.info("New transactions to be added", n=n_new)
+            logger.info("Transaction", transaction=transaction)
+        logger.bind(n=n_new).info("New transactions to be added")
+
         for transaction in new:
-            log.info("Transaction", transaction=transaction)
-        log.info("Existing transactions", n=n_existing)
+            logger.info("Transaction", transaction=transaction)
+        logger.bind(n=n_existing).info("Existing transactions")
+
         # for transaction in existing:
-        #     log.info("Transaction", transaction=transaction)
+        #     logger.info("Transaction", transaction=transaction)
 
         assert n_transactions == n_pending + n_new + n_existing
         print()

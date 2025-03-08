@@ -1,14 +1,12 @@
 import datetime
 
-import structlog
 from numpy import select
+from loguru import logger
 from sqlalchemy import DateTime, Double, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from dinero import rules
 from dinero.application import Application
-
-log = structlog.get_logger()
 
 
 class Table:

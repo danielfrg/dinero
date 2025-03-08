@@ -1,5 +1,5 @@
 import pendulum
-import structlog
+from loguru import logger
 from pendulum import Date
 from plaid import Client
 from plaid import errors as plaid_errors
@@ -7,7 +7,6 @@ from plaid import errors as plaid_errors
 from dinero.application import Application
 from dinero.utils import base as baseutils
 
-log = structlog.get_logger()
 
 CLIENT = None
 
@@ -76,10 +75,8 @@ def get_transactions(app: Application, name, date: str | Date, days=30):
             offset=len(transactions_api_json),
         )
         transactions_api_json.extend(response["transactions"])
-    log.info(
-        "Transactions downloaded",
-        name=name,
-        records=len(transactions_api_json),
+    logger.bind(name=name, records=len(transactions_api_json)).info(
+        "Transactions downloaded"
     )
 
     # From Plaid API JSON format to the classes in this file
@@ -89,15 +86,11 @@ def get_transactions(app: Application, name, date: str | Date, days=30):
     for transaction_json in transactions_api_json:
         transactions.append_from_plaid(transaction_json)
 
-    log.info(
-        "Transactions pending",
-        name=name,
-        records=len(transactions.pending),
+    logger.bind(name=name, records=len(transactions.pending)).info(
+        "Transactions pending"
     )
-    log.info(
-        "Transactions not pending",
-        name=name,
-        records=len(transactions.not_pending),
+    logger.bind(name=name, records=len(transactions.not_pending)).info(
+        "Transactions not pending"
     )
     return transactions
 
@@ -108,7 +101,7 @@ def account_id_to_name(app: Application, account_id):
     if account_id in plaid_id_to_name:
         return plaid_id_to_name[account_id]
     else:
-        log.error(
+        logger.error(
             "ID not found in the accounts map, add it to the settings.toml "
             "on section: plaid.account_id_to_name",
             account_id=account_id,

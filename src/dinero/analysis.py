@@ -1,17 +1,10 @@
-import logging
-
 import pandas as pd
-import structlog
+from loguru import logger
 
 from dinero import Application
 from dinero.db import Transaction
 
 pd.options.display.float_format = "{:,.2f}".format
-
-structlog.configure(
-    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-)
-log = structlog.get_logger()
 
 
 app = Application()

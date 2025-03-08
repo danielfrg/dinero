@@ -1,11 +1,8 @@
-import json
 import os
+import json
 
-import structlog
-
+from loguru import logger
 from dinero.application import Application
-
-log = structlog.get_logger()
 
 
 def categories_for_transaction(app: Application, description):
@@ -23,11 +20,9 @@ def categories_for_transaction(app: Application, description):
 
     if description in rules:
         cat, subcat = rules[description][0], rules[description][1]
-        log.debug(
-            "Automatically adding categories",
-            category=cat,
-            subcategory=subcat,
-            desc=description,
+        logger.bind(category=cat, subcategory=subcat, desc=description).debug(
+            "Automatically adding categories"
         )
+
         return cat, subcat
     return "", ""

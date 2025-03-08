@@ -1,17 +1,10 @@
-import logging
-
-import structlog
+from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy_utils import create_database, database_exists
 
 from dinero import Application
 from dinero.cli import utils
 from dinero.db import Transaction
-
-structlog.configure(
-    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-)
-log = structlog.get_logger()
 
 
 def init_db():
