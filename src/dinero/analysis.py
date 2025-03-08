@@ -20,17 +20,19 @@ def get_dataframe():
 def select(data=None, year=None, month=None, before=None, after=None, account=None):
     selected = data if data is not None else get_dataframe()
 
-    before = pd.to_datetime(before)
-    after = pd.to_datetime(after)
+    # Convert only if the parameter is provided and is not already null.
+    before = pd.to_datetime(before) if before is not None else None
+    after = pd.to_datetime(after) if after is not None else None
+
     if account:
         selected = selected[selected.account == account]
     if year:
         selected = selected[selected.date.dt.year == year]
     if month:
         selected = selected[selected.date.dt.month == month]
-    if after:
+    if after is not None and pd.notnull(after):
         selected = selected[selected.date >= after]
-    if before:
+    if before is not None and pd.notnull(before):
         selected = selected[selected.date <= before]
     return selected
 

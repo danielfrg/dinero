@@ -1,0 +1,8 @@
+accounts:
+  - name: "Account Name"
+    default: 
+      method: "this_or_last_month"
+      offset: 22
+  - name: "Cash"
+    default: 
+      method: "today"
