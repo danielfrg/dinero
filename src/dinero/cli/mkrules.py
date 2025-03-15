@@ -1,7 +1,5 @@
 import json
 
-import click
-
 from dinero import Application, analysis
 from dinero.cli import utils
 
@@ -16,8 +14,8 @@ def gen_rules():
     most_common = groups[groups >= 3]
     most_common = most_common.reset_index()  # Remove MultiIndex
 
-    click.echo("Most common transactions:")
-    click.echo(most_common)
+    print("Most common transactions:")
+    print(most_common)
 
     if utils.noninteractive() or utils.query_yes_no(
         '\nDo you want to save these rules to "%s"?' % TARGET
