@@ -2,7 +2,7 @@
 name = "dinero"
 description = "Money tracking tools"
 readme = "README.md"
-requires-python = "==3.10.*"
+requires-python = ">=3.12"
 license = "Apache-2.0"
 keywords = []
 authors = [{ name = "Daniel Rodriguez", email = "daniel@danielfrg.com" }]
@@ -15,11 +15,10 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "pandas>=2.0.0",
+    "pandas>=2.2.3",
     "pendulum==3.0.0",
     "plaid-python>=7.5.0, <8",
     "pydantic>=1.10.0, <2.0.0",
-    "tomli_w>=1.0.0",
     "sqlalchemy>=2.0.21",
     "platformdirs>=3.10.0",
     "psycopg[binary,pool]>=3.2.3",

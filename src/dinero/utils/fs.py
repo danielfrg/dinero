@@ -5,10 +5,7 @@ import pathlib
 import sys
 from typing import Any
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
+import tomllib
 
 repo_root = pathlib.Path(__file__).parent.parent.parent.resolve()
 
