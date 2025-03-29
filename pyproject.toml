@@ -2,7 +2,7 @@
 name = "dinero"
 description = "Money tracking tools"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = "Apache-2.0"
 keywords = []
 authors = [{ name = "Daniel Rodriguez", email = "daniel@danielfrg.com" }]
@@ -22,7 +22,7 @@ dependencies = [
     "sqlalchemy>=2.0.21",
     "platformdirs>=3.10.0",
     "psycopg[binary,pool]>=3.2.3",
-    "fire>=0.5.0",
+    "fire>=0.7.0",
     "sqlalchemy-utils>=0.41.1",
     "loguru>=0.7.3",
 ]
