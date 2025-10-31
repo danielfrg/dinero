@@ -28,6 +28,15 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[project.optional-dependencies]
+dev = [
+    "pyright[nodejs]>=1.1.391",
+]
+dashboards = [
+  "jupyterlab>=3.4.5",
+  "streamlit>=1.37.1",
+]
+
 [dependency-groups]
 dev = [
   "hatch~=1.7.0",
@@ -37,10 +46,6 @@ dev = [
   "ruff>=0.1.0",
   "pip-tools",
   "pyright>=1.1.391",
-]
-dashboards = [
-  "jupyterlab>=3.4.5",
-  "streamlit>=1.37.1",
 ]
 
 [tool.hatch.version]
@@ -56,11 +61,6 @@ dinero = "dinero.cli.main:main"
 Documentation = "https://github.com/danielfrg/dinero#readme"
 Issues = "https://github.com/danielfrg/dinero/issues"
 Source = "https://github.com/danielfrg/dinero"
-
-[project.optional-dependencies]
-dev = [
-    "pyright[nodejs]>=1.1.391",
-]
 
 [build-system]
 requires = ["hatchling"]
