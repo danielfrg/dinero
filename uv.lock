@@ -348,30 +348,24 @@ dependencies = [
     { name = "sqlalchemy-utils" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dashboards = [
     { name = "jupyterlab" },
     { name = "streamlit" },
 ]
-dev = [
-    { name = "pyright", extra = ["nodejs"] },
-]
-
-[package.dev-dependencies]
 dev = [
     { name = "hatch" },
     { name = "ipython" },
     { name = "isort" },
     { name = "mypy" },
     { name = "pip-tools" },
-    { name = "pyright" },
+    { name = "pyright", extra = ["nodejs"] },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fire", specifier = ">=0.7.0" },
-    { name = "jupyterlab", marker = "extra == 'dashboards'", specifier = ">=3.4.5" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "pendulum", specifier = "==3.0.0" },
@@ -379,20 +373,22 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=3.10.0" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.2.3" },
     { name = "pydantic", specifier = ">=1.10.0,<2.0.0" },
-    { name = "pyright", extras = ["nodejs"], marker = "extra == 'dev'", specifier = ">=1.1.391" },
     { name = "sqlalchemy", specifier = ">=2.0.21" },
     { name = "sqlalchemy-utils", specifier = ">=0.41.1" },
-    { name = "streamlit", marker = "extra == 'dashboards'", specifier = ">=1.37.1" },
 ]
 
 [package.metadata.requires-dev]
+dashboards = [
+    { name = "jupyterlab", specifier = ">=3.4.5" },
+    { name = "streamlit", specifier = ">=1.37.1" },
+]
 dev = [
     { name = "hatch", specifier = "~=1.7.0" },
     { name = "ipython", specifier = "~=8.12.0" },
     { name = "isort", specifier = "~=5.12.0" },
     { name = "mypy", specifier = "~=1.2.0" },
     { name = "pip-tools" },
-    { name = "pyright", specifier = ">=1.1.391" },
+    { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.391" },
     { name = "ruff", specifier = ">=0.1.0" },
 ]
 

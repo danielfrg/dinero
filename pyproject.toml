@@ -28,15 +28,6 @@ dependencies = [
 ]
 dynamic = ["version"]
 
-[project.optional-dependencies]
-dev = [
-    "pyright[nodejs]>=1.1.391",
-]
-dashboards = [
-  "jupyterlab>=3.4.5",
-  "streamlit>=1.37.1",
-]
-
 [dependency-groups]
 dev = [
   "hatch~=1.7.0",
@@ -45,7 +36,11 @@ dev = [
   "mypy~=1.2.0",
   "ruff>=0.1.0",
   "pip-tools",
-  "pyright>=1.1.391",
+  "pyright[nodejs]>=1.1.391",
+]
+dashboards = [
+  "jupyterlab>=3.4.5",
+  "streamlit>=1.37.1",
 ]
 
 [tool.hatch.version]
