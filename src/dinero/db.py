@@ -61,6 +61,31 @@ class Table:
 
         return self.new, self.existing
 
+    def prepare_from_records(self, records: list["Transaction"]):
+        """
+        Prepare Transaction records for insertion (for CSV import).
+
+        Unlike `prepare()` which converts from Plaid format, this takes
+        already-created Transaction objects.
+
+        Parameters
+        ----------
+            records: List of Transaction objects to (possibly) be inserted
+
+        Returns
+        -------
+            (new, existing): tuple of 2 lists of Transaction objects
+        """
+        self.new, self.existing = [], []
+
+        for record in records:
+            if not self.exists(record):
+                self.new.append(record)
+            else:
+                self.existing.append(record)
+
+        return self.new, self.existing
+
     def commit(self, *args, **kwargs):
         """Commit changes to Postgres
         Run `self.prepare(records)` first

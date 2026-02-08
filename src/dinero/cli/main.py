@@ -5,6 +5,7 @@ from loguru import logger
 
 from dinero import Application
 from dinero.cli.db import init_db
+from dinero.cli.import_csv import import_csv
 from dinero.cli.mkdataset import mkdataset
 from dinero.cli.mkrules import gen_rules
 from dinero.cli.transactions import transactions
@@ -28,6 +29,7 @@ def main():
             "mkdataset": mkdataset,
             "transactions": transactions,
             "mkrules": gen_rules,
+            "import-csv": import_csv,
         }
     )
 
