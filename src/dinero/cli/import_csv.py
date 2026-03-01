@@ -16,6 +16,7 @@ import csv
 import sys
 from pathlib import Path
 
+import click
 import pendulum
 from loguru import logger
 
@@ -23,15 +24,15 @@ from dinero import Application, db, rules
 from dinero.cli import utils
 
 
+@click.command()
+@click.argument("file")
+@click.argument("account")
 def import_csv(file: str, account: str):
     """Import transactions from a CSV file.
 
-    Parameters
-    ----------
-    file : str
-        Path to the CSV file to import.
-    account : str
-        Account name to associate with all transactions.
+    FILE is the path to the CSV file to import.
+
+    ACCOUNT is the account name to associate with all transactions.
     """
     app = Application()
     csv_path = Path(file)
@@ -170,9 +171,3 @@ def parse_row(
     t.account = account
 
     return t
-
-
-if __name__ == "__main__":
-    import fire
-
-    fire.Fire(import_csv)

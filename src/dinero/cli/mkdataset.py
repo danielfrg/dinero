@@ -1,11 +1,14 @@
 import os
 
+import click
 from sqlalchemy import create_engine
 
 from dinero import analysis
 
 
+@click.command()
 def mkdataset():
+    """Export all transactions to CSV and SQLite."""
     if not os.path.exists("data"):
         os.makedirs("data", exist_ok=True)
 
@@ -18,9 +21,3 @@ def mkdataset():
 
     with engine.connect() as conn:
         df.to_sql("transactions", conn, if_exists="replace", index=False)
-
-
-if __name__ == "__main__":
-    import fire
-
-    fire.Fire(mkdataset)

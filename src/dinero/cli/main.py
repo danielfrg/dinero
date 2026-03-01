@@ -1,14 +1,14 @@
 import sys
 
-import fire
+import click
 from loguru import logger
 
 from dinero import Application
+from dinero.cli.cache import cache
 from dinero.cli.db import init_db
 from dinero.cli.import_csv import import_csv
 from dinero.cli.mkdataset import mkdataset
 from dinero.cli.mkrules import gen_rules
-from dinero.cli.cache import cache
 from dinero.cli.search import search
 from dinero.cli.transactions import transactions
 
@@ -23,26 +23,28 @@ logger.add(
 )
 
 
+@click.group()
 def main():
-    fire.Fire(
-        {
-            "init-db": init_db,
-            "config": config_cmd,
-            "mkdataset": mkdataset,
-            "transactions": transactions,
-            "mkrules": gen_rules,
-            "import-csv": import_csv,
-            "search": search,
-            "build-cache": cache,
-        }
-    )
+    """Dinero - Personal finance tracking tools."""
+    pass
 
 
+@main.command("config")
 def config_cmd():
+    """Print the config file path and loaded configuration."""
     app = Application()
 
     print(app.config_file_path)
     print(app.config)
+
+
+main.add_command(init_db, "init-db")
+main.add_command(mkdataset, "mkdataset")
+main.add_command(transactions, "transactions")
+main.add_command(gen_rules, "mkrules")
+main.add_command(import_csv, "import-csv")
+main.add_command(search, "search")
+main.add_command(cache, "build-cache")
 
 
 if __name__ == "__main__":

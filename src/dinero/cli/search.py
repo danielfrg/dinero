@@ -1,6 +1,7 @@
 import json
 import datetime
 
+import click
 from loguru import logger
 from sqlalchemy import select, extract
 from tabulate import tabulate
@@ -9,49 +10,61 @@ from dinero.application import Application
 from dinero.db import Transaction, get_session
 
 
+@click.command()
+@click.option("--account", default=None, help="Filter by account name (exact match).")
+@click.option("--category", default=None, help="Filter by category (exact match).")
+@click.option(
+    "--subcategory", default=None, help="Filter by subcategory (exact match)."
+)
+@click.option(
+    "--description",
+    default=None,
+    help="Search description (case-insensitive partial match).",
+)
+@click.option(
+    "--after", default=None, help="Transactions on or after this date (YYYY-MM-DD)."
+)
+@click.option(
+    "--before", default=None, help="Transactions on or before this date (YYYY-MM-DD)."
+)
+@click.option("--year", type=int, default=None, help="Filter by year.")
+@click.option("--month", type=int, default=None, help="Filter by month (1-12).")
+@click.option(
+    "--limit",
+    type=int,
+    default=50,
+    show_default=True,
+    help="Maximum number of rows to return.",
+)
+@click.option(
+    "--sort",
+    default="date",
+    show_default=True,
+    help="Column to sort by: date, amount, description, account, category.",
+)
+@click.option("--desc/--asc", default=True, show_default=True, help="Sort direction.")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help="Output as JSON instead of table.",
+)
 def search(
-    account=None,
-    category=None,
-    subcategory=None,
-    description=None,
-    after=None,
-    before=None,
-    year=None,
-    month=None,
-    limit=50,
-    sort="date",
-    desc=True,
-    json_output=False,
+    account,
+    category,
+    subcategory,
+    description,
+    after,
+    before,
+    year,
+    month,
+    limit,
+    sort,
+    desc,
+    json_output,
 ):
-    """Search transactions in the database with filters.
-
-    Parameters
-    ----------
-    account : str, optional
-        Filter by account name (exact match)
-    category : str, optional
-        Filter by category (exact match)
-    subcategory : str, optional
-        Filter by subcategory (exact match)
-    description : str, optional
-        Search description (case-insensitive partial match)
-    after : str, optional
-        Transactions on or after this date (YYYY-MM-DD)
-    before : str, optional
-        Transactions on or before this date (YYYY-MM-DD)
-    year : int, optional
-        Filter by year
-    month : int, optional
-        Filter by month (1-12)
-    limit : int, optional
-        Maximum number of rows to return (default: 50)
-    sort : str, optional
-        Column to sort by (default: date). Options: date, amount, description, account, category
-    desc : bool, optional
-        Sort descending (default: True, most recent first)
-    json_output : bool, optional
-        Output as JSON instead of table (default: False)
-    """
+    """Search transactions in the database with filters."""
     app = Application()
     session = get_session(app)
 

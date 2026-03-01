@@ -1,3 +1,4 @@
+import click
 from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy_utils import create_database, database_exists
@@ -7,7 +8,9 @@ from dinero.cli import utils
 from dinero.db import Transaction
 
 
+@click.command()
 def init_db():
+    """Create the database and tables."""
     app = Application()
 
     conn_string = app.config.database.connection_string
@@ -26,9 +29,3 @@ def init_db():
     if utils.noninteractive() or utils.query_yes_no("Create tables?"):
         Transaction.metadata.create_all(engine)
         print("Table created")
-
-
-if __name__ == "__main__":
-    import fire
-
-    fire.Fire(init_db)

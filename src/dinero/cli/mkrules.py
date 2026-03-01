@@ -1,10 +1,14 @@
 import json
 
+import click
+
 from dinero import Application, analysis
 from dinero.cli import utils
 
 
+@click.command()
 def gen_rules():
+    """Generate category rules from the most common transactions."""
     app = Application()
 
     TARGET = app.config_dir / "category_rules.json"
@@ -26,9 +30,3 @@ def gen_rules():
                 rules[row["description"]] = [row["category"], row["subcategory"]]
             string = json.dumps(rules, sort_keys=True, indent=4, separators=(",", ": "))
             f.write(string)
-
-
-if __name__ == "__main__":
-    import fire
-
-    fire.Fire(gen_rules)

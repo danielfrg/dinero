@@ -1,3 +1,4 @@
+import click
 import pendulum
 from loguru import logger
 
@@ -13,7 +14,9 @@ DAYS = 90
 ADD_PENDING = False
 
 
+@click.command()
 def transactions():
+    """Fetch new transactions from Plaid and insert into the database."""
     app = Application()
 
     # Get new transactions from plaid
@@ -85,9 +88,3 @@ def transactions():
         print("Inserting %i new records" % len(table.new))
         table.commit()
         print("Done")
-
-
-if __name__ == "__main__":
-    import fire
-
-    fire.Fire(transactions)

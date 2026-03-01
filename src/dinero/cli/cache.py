@@ -1,18 +1,21 @@
 import json
 import os
 
+import click
 from loguru import logger
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from dinero.application import Application
 from dinero.db import Transaction, get_session
 
 
+@click.command()
 def cache():
-    """Cache accounts, categories and subcategories to ~/.config/dinero/cache/
+    """Cache accounts, categories and subcategories.
 
-    This creates JSON files that can be used by AI agents or other tools
-    to know valid filter values without querying the database directly.
+    Creates JSON files in ~/.config/dinero/cache/ that can be used by
+    AI agents or other tools to know valid filter values without querying
+    the database directly.
     """
     app = Application()
     session = get_session(app)

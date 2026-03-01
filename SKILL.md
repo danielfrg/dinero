@@ -39,8 +39,8 @@ dinero search [OPTIONS]
 | `--month` | int | Filter by month (1-12) |
 | `--limit` | int | Max rows returned (default: 50) |
 | `--sort` | string | Sort by column: date, amount, description, account, category (default: date) |
-| `--desc` | bool | Sort descending (default: True) |
-| `--json_output` | bool | Output as JSON instead of table (default: False) |
+| `--desc` / `--asc` | flag | Sort direction (default: `--desc`, most recent first) |
+| `--json` | flag | Output as JSON instead of table |
 
 ### Important Notes
 
@@ -88,7 +88,7 @@ dinero search --after "2025-01-01" --before "2025-01-31"
 
 ### Get the largest transactions from last month as JSON
 ```bash
-dinero search --year 2025 --month 12 --sort amount --json_output
+dinero search --year 2025 --month 12 --sort amount --json
 ```
 
 ### Combine multiple filters
