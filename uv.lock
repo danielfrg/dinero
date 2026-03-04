@@ -339,7 +339,7 @@ wheels = [
 ]
 
 [[package]]
-name = "dinero"
+name = "dinero-tools"
 source = { editable = "." }
 dependencies = [
     { name = "click" },

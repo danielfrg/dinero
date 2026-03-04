@@ -1,5 +1,5 @@
 [project]
-name = "dinero"
+name = "dinero-tools"
 description = "Money tracking tools"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
