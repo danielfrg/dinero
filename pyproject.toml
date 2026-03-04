@@ -48,6 +48,9 @@ dashboards = [
 [tool.hatch.version]
 path = "src/dinero/__about__.py"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/dinero"]
+
 [tool.hatch.metadata]
 allow-direct-references = true
 
