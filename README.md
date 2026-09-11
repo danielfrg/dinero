@@ -7,8 +7,8 @@ Your own Mint/YNAB, self hosted.
 - SQL Database for storing transactions
   - I personally use Postgres but any SQLAlchemy compatible DB should work
   - This README uses SQLite
-  - I use [NocoDB](https://nocodb.com) as a viewer/explorer with filters and groups
-    by Account, Category and so on
+  - I use [Mathesar](https://mathesar.org/) as a viewer and editor for Account,
+    Category, and other transaction data
   - I use [Metabase](https://www.metabase.com/) to create dashboards
   - Your imagination is the limit here!
   - You can read more about how I use this + some screenshots [in my wiki](https://wiki.danielfrg.com/homelab/dinero/).
