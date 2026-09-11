@@ -1,5 +1,4 @@
 import json
-import datetime
 
 import click
 from loguru import logger
@@ -8,6 +7,7 @@ from tabulate import tabulate
 
 from dinero.application import Application
 from dinero.db import Transaction, get_session
+from dinero.query import start_of_day, start_of_next_day
 
 
 @click.command()
@@ -66,8 +66,22 @@ def search(
 ):
     """Search transactions in the database with filters."""
     app = Application()
-    session = get_session(app)
 
+    after_date = None
+    if after is not None:
+        try:
+            after_date = start_of_day(after, app.config.timezone)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="--after") from exc
+
+    before_date = None
+    if before is not None:
+        try:
+            before_date = start_of_next_day(before, app.config.timezone)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="--before") from exc
+
+    session = get_session(app)
     stmt = select(Transaction)
 
     # Apply filters
@@ -83,13 +97,11 @@ def search(
     if description is not None:
         stmt = stmt.where(Transaction.description.ilike(f"%{description}%"))
 
-    if after is not None:
-        after_date = datetime.datetime.strptime(after, "%Y-%m-%d")
+    if after_date is not None:
         stmt = stmt.where(Transaction.date >= after_date)
 
-    if before is not None:
-        before_date = datetime.datetime.strptime(before, "%Y-%m-%d")
-        stmt = stmt.where(Transaction.date <= before_date)
+    if before_date is not None:
+        stmt = stmt.where(Transaction.date < before_date)
 
     if year is not None:
         stmt = stmt.where(extract("year", Transaction.date) == year)
@@ -120,6 +132,8 @@ def search(
     results = session.scalars(stmt).all()
 
     if not results:
+        if json_output:
+            click.echo("[]")
         logger.info("No transactions found matching the given filters.")
         session.close()
         return
@@ -142,7 +156,7 @@ def search(
         )
 
     if json_output:
-        print(json.dumps(rows, indent=2))
+        click.echo(json.dumps(rows, indent=2))
     else:
         headers = [
             "id",

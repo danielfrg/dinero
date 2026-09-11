@@ -39,6 +39,7 @@ dev = [
   "ruff>=0.1.0",
   "pip-tools",
   "pyright[nodejs]>=1.1.391",
+  "pytest>=8.0.0",
 ]
 dashboards = [
   "jupyterlab>=3.4.5",

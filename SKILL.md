@@ -26,6 +26,21 @@ When asked about transactions, follow this process:
 
 3. Execute the search and either present the results or analyze them based on the user's request
 
+Use `dinero balance` instead of `search --before` when a cumulative account
+amount is needed through the end of a day.
+
+## dinero balance
+
+Compute the cumulative Plaid-convention amount for one account, including all
+transactions on the `--through` date:
+
+```bash
+dinero balance --account "Chase Checking" --through 2026-08-31 --json
+```
+
+The JSON `amount` is a decimal string. Asset balances have the opposite sign;
+liability balances use the same sign.
+
 ## dinero search
 
 Use the `dinero search` command with any combination of the following filters:

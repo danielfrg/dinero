@@ -4,6 +4,7 @@ import click
 from loguru import logger
 
 from dinero import Application
+from dinero.cli.balance import balance
 from dinero.cli.cache import cache
 from dinero.cli.db import init_db
 from dinero.cli.import_csv import import_csv
@@ -16,9 +17,9 @@ from dinero.cli.transactions import transactions
 # Add a new handler that only shows INFO and above
 logger.remove()
 logger.add(
-    sys.stdout,
+    sys.stderr,
     level="INFO",
-    colorize=True,
+    colorize=sys.stderr.isatty(),
     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | {message} | <cyan>{extra}</cyan>",
 )
 
@@ -45,6 +46,7 @@ main.add_command(gen_rules, "mkrules")
 main.add_command(import_csv, "import-csv")
 main.add_command(search, "search")
 main.add_command(cache, "build-cache")
+main.add_command(balance, "balance")
 
 
 if __name__ == "__main__":

@@ -77,6 +77,22 @@ Get new transactions and add them to the database:
 dinero transactions
 ```
 
+Compute an account's cumulative amount through the end of a date:
+
+```terminal
+dinero balance --account "Bank 1 Checking" --through 2026-08-31
+```
+
+Preview a CSV import. CSV imports are dry runs unless `--commit` is supplied:
+
+```terminal
+dinero import-csv ./transactions.csv "Bank 1 Checking"
+dinero import-csv ./transactions.csv "Bank 1 Checking" --commit
+```
+
+Use `--yes` with `--commit` for an unattended import. Commands that support
+`--json` write only JSON to stdout; diagnostics are written to stderr.
+
 Example output:
 
 ```terminal
