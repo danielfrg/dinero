@@ -106,8 +106,8 @@ My Bank - Checking
 2023-09-21 11:06.58 [info     ] Queried transactions           n=17
 2023-09-21 11:06.58 [info     ] Pending transactions           n=0
 2023-09-21 11:06.58 [info     ] New transactions to be added   n=2
-2023-09-21 11:06.58 [info     ] Transaction                    transaction={'Account': 'BoA Checking', 'Amount': XXX, 'Category': '', 'Date': '2023-09-20', 'Description': 'XXXX', 'Subcategory': ''}
-2023-09-21 11:06.58 [info     ] Transaction                    transaction={'Account': 'BoA Checking', 'Amount': XXX, 'Category': '', 'Date': '2023-09-20', 'Description': 'XXXX', 'Subcategory': ''}
+2023-09-21 11:06.58 [info     ] Transaction                    transaction={'Account': 'Bank of America Checking', 'Amount': XXX, 'Category': '', 'Date': '2023-09-20', 'Description': 'XXXX', 'Subcategory': ''}
+2023-09-21 11:06.58 [info     ] Transaction                    transaction={'Account': 'Bank of America Checking', 'Amount': XXX, 'Category': '', 'Date': '2023-09-20', 'Description': 'XXXX', 'Subcategory': ''}
 2023-09-21 11:06.58 [info     ] Existing transactions          n=15
 2023-09-21 11:06.58 [info     ] Error transactions             n=0
 
