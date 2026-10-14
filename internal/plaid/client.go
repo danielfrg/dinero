@@ -27,9 +27,14 @@ type ErrLoginRequired struct{}
 
 func (*ErrLoginRequired) Error() string { return "Plaid login requires an update" }
 
-type ErrProvider struct{}
+type ErrProvider struct{ operation string }
 
-func (*ErrProvider) Error() string { return "Plaid transactions/get failed" }
+func (e *ErrProvider) Error() string {
+	if e.operation != "" {
+		return "Plaid " + e.operation + " failed"
+	}
+	return "Plaid transactions/get failed"
+}
 
 type SDKClient struct{ api *sdk.APIClient }
 

@@ -23,6 +23,7 @@ type LinkCredentials struct {
 func (r LinkCredentials) String() string {
 	return fmt.Sprintf("LinkCredentials{Alias:%q, Token:[REDACTED], ItemID:[REDACTED], Accounts:%d}", r.Alias, len(r.Accounts))
 }
+func (r LinkCredentials) GoString() string { return r.String() }
 
 // PreflightWritable rejects read-only mounts before a provider operation.
 // Both the config file and its parent must allow writes for atomic rename.
@@ -104,13 +105,20 @@ func SaveLink(ctx context.Context, path string, result LinkCredentials) error {
 	}
 	plaid := table(tree, "plaid")
 	tokens := table(plaid, "tokens")
+	if prior, exists := tokens[result.Alias]; exists && result.Token != "" && prior != result.Token {
+		return errors.New("existing Link token cannot be replaced")
+	}
+	itemIDs := table(plaid, "item_ids")
+	if prior, exists := itemIDs[result.Alias]; exists && result.ItemID != "" && prior != result.ItemID {
+		return errors.New("existing Link Item cannot be replaced")
+	}
 	if result.Token != "" {
 		tokens[result.Alias] = result.Token
 	} else if _, exists := tokens[result.Alias]; !exists {
 		return errors.New("link token is required for a new alias")
 	}
 	if result.ItemID != "" {
-		table(plaid, "item_ids")[result.Alias] = result.ItemID
+		itemIDs[result.Alias] = result.ItemID
 	}
 	accounts := table(plaid, "account_id_to_name")
 	for id, name := range result.Accounts {

@@ -83,3 +83,21 @@ func TestLockWaitRespectsCancellation(t *testing.T) {
 		t.Fatal("lock cancellation too slow")
 	}
 }
+
+func TestSaveLinkRejectsCredentialReplacement(t *testing.T) {
+	for _, result := range []config.LinkCredentials{{Alias: "bank_a", Token: "replacement"}, {Alias: "bank_a", ItemID: "replacement-item"}} {
+		path := fixture(t)
+		// Establish a synthetic existing alias independently of fixture naming.
+		if err := config.SaveLink(context.Background(), path, config.LinkCredentials{Alias: "bank_a", Token: "original", ItemID: "original-item"}); err != nil {
+			t.Fatal(err)
+		}
+		before, _ := os.ReadFile(path)
+		if err := config.SaveLink(context.Background(), path, result); err == nil {
+			t.Fatal("existing credentials replaced")
+		}
+		after, _ := os.ReadFile(path)
+		if string(before) != string(after) {
+			t.Fatal("conflict changed configuration")
+		}
+	}
+}
