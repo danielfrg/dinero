@@ -205,3 +205,36 @@ func TestCommitReclassifiesNewAmbiguity(t *testing.T) {
 		}
 	})
 }
+
+func TestExistingSubcentAmountsUseHalfEvenClassification(t *testing.T) {
+	databases(t, func(t *testing.T, fx *testutil.Fixture) {
+		svc, _ := service(t, fx, true)
+		cases := []struct {
+			name, csvAmount, wantStatus string
+			existing                    []float64
+		}{
+			{"positive skip", "4.24", "no-new-transactions", []float64{4.245}},
+			{"positive new", "4.25", "dry-run", []float64{4.245}},
+			{"negative skip", "-4.24", "no-new-transactions", []float64{-4.245}},
+			{"negative new", "-4.25", "dry-run", []float64{-4.245}},
+			{"positive ambiguous", "4.24", "ambiguous", []float64{4.245, 4.24}},
+			{"negative ambiguous", "-4.24", "ambiguous", []float64{-4.245, -4.24}},
+		}
+		for _, tc := range cases {
+			for _, amount := range tc.existing {
+				fx.Insert(t, "2026-09-02 12:00:00", tc.name, amount, "Test Account")
+			}
+			csv := "date,description,amount\n2026-09-02," + tc.name + "," + tc.csvAmount + "\n"
+			got, err := svc.Preview(context.Background(), strings.NewReader(csv), "transactions.csv", "Test Account")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != tc.wantStatus {
+				t.Errorf("%s: status %q, want %q (new %d existing %d ambiguous %d)", tc.name, got.Status, tc.wantStatus, got.NewTransactions, got.ExistingTransactions, got.AmbiguousTransactions)
+			}
+			if tc.wantStatus == "ambiguous" && (got.AmbiguousTransactions != 1 || len(got.Ambiguous) != 1 || len(got.Ambiguous[0].ExistingIDs) != 2) {
+				t.Errorf("%s: ambiguous result %+v", tc.name, got)
+			}
+		}
+	})
+}

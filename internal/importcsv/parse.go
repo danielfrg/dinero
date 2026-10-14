@@ -126,7 +126,7 @@ func parseAmount(value string) (decimal.Decimal, float64, error) {
 		return invalid(". Cannot preserve cents")
 	}
 	back, err := decimal.NewFromString(strconv.FormatFloat(stored, 'f', -1, 64))
-	if err != nil || !back.Round(2).Equal(d) {
+	if err != nil || !back.RoundBank(2).Equal(d) {
 		return invalid(". Cannot preserve cents")
 	}
 	return d, stored, nil

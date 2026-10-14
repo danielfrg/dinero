@@ -18,7 +18,7 @@ func key(tr ledger.Transaction, loc *time.Location) (transactionKey, bool) {
 	if e != nil {
 		return transactionKey{}, false
 	}
-	return transactionKey{tr.Date.In(loc).Format("2006-01-02"), tr.Account, tr.Description, d.Round(2).StringFixed(2)}, true
+	return transactionKey{tr.Date.In(loc).Format("2006-01-02"), tr.Account, tr.Description, d.RoundBank(2).StringFixed(2)}, true
 }
 func duplicateRows(records []record, loc *time.Location) [][]int {
 	byKey := map[transactionKey][]int{}
