@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -175,23 +176,33 @@ func (s *Service) Export(ctx context.Context, directory string) error {
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return err
 	}
-	file, err := os.Create(filepath.Join(directory, "all.csv"))
+	file, err := os.CreateTemp(directory, ".all.csv-*")
 	if err != nil {
 		return err
 	}
+	csvTempPath := file.Name()
+	defer os.Remove(csvTempPath)
+	defer file.Close()
 	writer := csv.NewWriter(file)
 	if err := writer.Write([]string{"id", "date", "description", "category", "subcategory", "amount", "notes", "account"}); err != nil {
-		file.Close()
 		return err
 	}
-	dbPath := filepath.Join(directory, "transactions.db")
-	if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
-		file.Close()
-		return err
-	}
-	db, err := sql.Open("sqlite", dbPath)
+	dbTempFile, err := os.CreateTemp(directory, ".transactions.db-*")
 	if err != nil {
-		file.Close()
+		return err
+	}
+	dbTempPath := dbTempFile.Name()
+	if err := dbTempFile.Close(); err != nil {
+		return err
+	}
+	defer func() {
+		os.Remove(dbTempPath)
+		os.Remove(dbTempPath + "-journal")
+		os.Remove(dbTempPath + "-wal")
+		os.Remove(dbTempPath + "-shm")
+	}()
+	db, err := sql.Open("sqlite", dbTempPath)
+	if err != nil {
 		return err
 	}
 	defer db.Close()
@@ -200,12 +211,10 @@ func (s *Service) Export(ctx context.Context, directory string) error {
 		dateType = "TIMESTAMP"
 	}
 	if _, err := db.ExecContext(ctx, "CREATE TABLE transactions (id BIGINT, date "+dateType+", description TEXT, category TEXT, subcategory TEXT, amount FLOAT, notes TEXT, account TEXT)"); err != nil {
-		file.Close()
 		return err
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		file.Close()
 		return err
 	}
 	defer tx.Rollback()
@@ -230,24 +239,58 @@ func (s *Service) Export(ctx context.Context, directory string) error {
 		}
 		csvRow := []string{strconv.FormatInt(r.ID, 10), nullText(r.Date, csvDate), nullText(r.Description, r.Description.String), nullText(r.Category, r.Category.String), nullText(r.Subcategory, r.Subcategory.String), nullAmount(r.Amount), nullText(r.Notes, r.Notes.String), nullText(r.Account, r.Account.String)}
 		if err := writer.Write(csvRow); err != nil {
-			file.Close()
 			return err
 		}
 		_, err := tx.ExecContext(ctx, "INSERT INTO transactions VALUES (?,?,?,?,?,?,?,?)", r.ID, nullValue(r.Date, date), nullValue(r.Description, r.Description.String), nullValue(r.Category, r.Category.String), nullValue(r.Subcategory, r.Subcategory.String), nullFloat(r.Amount), nullValue(r.Notes, r.Notes.String), nullValue(r.Account, r.Account.String))
 		if err != nil {
-			file.Close()
 			return err
 		}
 	}
 	writer.Flush()
 	if err := writer.Error(); err != nil {
-		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
 		return err
 	}
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if err := db.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	csvPath := filepath.Join(directory, "all.csv")
+	dbPath := filepath.Join(directory, "transactions.db")
+	if err := replaceableExportTarget(csvPath); err != nil {
+		return err
+	}
+	if err := replaceableExportTarget(dbPath); err != nil {
+		return err
+	}
+	if err := os.Rename(dbTempPath, dbPath); err != nil {
+		return err
+	}
+	return os.Rename(csvTempPath, csvPath)
+}
+
+func replaceableExportTarget(path string) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("export target is not a regular file: %s", filepath.Base(path))
+	}
+	return nil
 }
 func nullText(v sql.NullString, text string) string {
 	if v.Valid {

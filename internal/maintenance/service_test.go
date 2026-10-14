@@ -73,6 +73,10 @@ func TestRulesCacheExport(t *testing.T) {
 		if err := exported.QueryRow("SELECT count(*) FROM transactions").Scan(&n); err != nil || n != 4 {
 			t.Fatalf("export rows %d %v", n, err)
 		}
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) != 2 {
+			t.Fatalf("export temp files leaked: %v %v", entries, err)
+		}
 		csvText, err := os.ReadFile(filepath.Join(dir, "all.csv"))
 		if err != nil {
 			t.Fatal(err)
@@ -174,5 +178,49 @@ func TestCSVFloatKeepsDecimalPoint(t *testing.T) {
 	}
 	if !strings.Contains(string(text), "-100.0") {
 		t.Fatalf("CSV amount %s", text)
+	}
+}
+
+func TestExportFailurePreservesPreviousArtifacts(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		fixture func(*testing.T) *testutil.Fixture
+	}{{"sqlite", func(t *testing.T) *testutil.Fixture { return testutil.NewSQLite(t) }}, {"postgres", func(t *testing.T) *testutil.Fixture { return testutil.NewPostgres(t) }}} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := tc.fixture(t)
+			fx.InsertNullable(t, "2026-09-01 08:00:00", "Coffee", "Food", "Cafe", 4.25, "Checking", "")
+			s, err := store.Open(context.Background(), fx.DSN, false, "UTC")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			dir := t.TempDir()
+			csvPath := filepath.Join(dir, "all.csv")
+			dbPath := filepath.Join(dir, "transactions.db")
+			if err := os.WriteFile(csvPath, []byte("previous CSV\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(dbPath, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dbPath, "previous"), []byte("previous DB"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := maintenance.New(s, config.Config{Timezone: "UTC"}).Export(context.Background(), dir); err == nil {
+				t.Fatal("expected invalid destination failure")
+			}
+			got, err := os.ReadFile(csvPath)
+			if err != nil || string(got) != "previous CSV\n" {
+				t.Fatalf("previous CSV changed %q %v", got, err)
+			}
+			got, err = os.ReadFile(filepath.Join(dbPath, "previous"))
+			if err != nil || string(got) != "previous DB" {
+				t.Fatalf("previous database changed %q %v", got, err)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 2 {
+				t.Fatalf("temporary files leaked: %v %v", entries, err)
+			}
+		})
 	}
 }
