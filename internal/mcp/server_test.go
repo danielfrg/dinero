@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielfrg/dinero/internal/config"
 	"github.com/danielfrg/dinero/internal/httpapi"
@@ -21,14 +22,6 @@ import (
 )
 
 const token = "synthetic-read-token-123456"
-
-type bearerTransport struct{ base http.RoundTripper }
-
-func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	r = r.Clone(r.Context())
-	r.Header.Set("Authorization", "Bearer "+token)
-	return b.base.RoundTrip(r)
-}
 
 func fixture(t *testing.T) (*ledger.Service, func()) {
 	t.Helper()
@@ -42,15 +35,33 @@ func fixture(t *testing.T) (*ledger.Service, func()) {
 }
 
 func connect(t *testing.T, endpoint string) *sdk.ClientSession {
+	return connectWithHost(t, endpoint, "")
+}
+
+func connectWithHost(t *testing.T, endpoint, host string) *sdk.ClientSession {
 	t.Helper()
 	client := sdk.NewClient(&sdk.Implementation{Name: "integration-test", Version: "0.1.0"}, nil)
-	transport := &sdk.StreamableClientTransport{Endpoint: endpoint, DisableStandaloneSSE: true, HTTPClient: &http.Client{Transport: bearerTransport{base: http.DefaultTransport}}}
+	transport := &sdk.StreamableClientTransport{Endpoint: endpoint, DisableStandaloneSSE: true, HTTPClient: &http.Client{Transport: hostedBearerTransport{base: http.DefaultTransport, host: host}}}
 	session, err := client.Connect(context.Background(), transport, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { session.Close() })
 	return session
+}
+
+type hostedBearerTransport struct {
+	base http.RoundTripper
+	host string
+}
+
+func (b hostedBearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("Authorization", "Bearer "+token)
+	if b.host != "" {
+		r.Host = b.host
+	}
+	return b.base.RoundTrip(r)
 }
 
 func call(t *testing.T, session *sdk.ClientSession, name string, args map[string]any) map[string]any {
@@ -183,7 +194,32 @@ func TestMCPRejectsUnauthorizedAndUntrustedRequests(t *testing.T) {
 	}
 }
 
-func TestMCPInvalidUnknownCanceledAndUnavailable(t *testing.T) {
+func TestMCPAllowsConfiguredPublicHostForwardedToLoopback(t *testing.T) {
+	svc, _ := fixture(t)
+	policy := httpapi.Options{Token: []byte(token), AllowedHosts: []string{"ledger.example.test"}}
+	ts := httptest.NewServer(server.NewHandler(svc, policy, adapter.NewTransportHandler(svc)))
+	defer ts.Close()
+	session := connectWithHost(t, ts.URL+"/mcp", "ledger.example.test")
+	if got := call(t, session, "list_accounts", map[string]any{}); len(got["accounts"].([]any)) != 1 {
+		t.Fatalf("forwarded public Host call=%v", got)
+	}
+	r, err := http.NewRequest("POST", ts.URL+"/mcp", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Host = "attacker.example"
+	r.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("hostile Host status=%d", resp.StatusCode)
+	}
+}
+
+func TestMCPInvalidUnknownAndUnavailable(t *testing.T) {
 	svc, closeDB := fixture(t)
 	ts := httptest.NewServer(server.NewHandler(svc, httpapi.Options{Token: []byte(token)}, adapter.NewTransportHandler(svc)))
 	defer ts.Close()
@@ -200,11 +236,6 @@ func TestMCPInvalidUnknownCanceledAndUnavailable(t *testing.T) {
 	if _, err := session.CallTool(context.Background(), &sdk.CallToolParams{Name: "delete_all_transactions", Arguments: map[string]any{}}); err == nil {
 		t.Fatal("unknown tool accepted")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if _, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "list_accounts", Arguments: map[string]any{}}); err == nil {
-		t.Fatal("canceled call succeeded")
-	}
 	closeDB()
 	result, err := session.CallTool(context.Background(), &sdk.CallToolParams{Name: "list_accounts", Arguments: map[string]any{}})
 	if err != nil || !result.IsError {
@@ -213,5 +244,65 @@ func TestMCPInvalidUnknownCanceledAndUnavailable(t *testing.T) {
 	b, _ := json.Marshal(result)
 	if strings.Contains(string(b), "sqlite") || strings.Contains(string(b), "ledger.sqlite") || strings.Contains(string(b), "plaid-secret") {
 		t.Fatalf("database detail leaked: %s", b)
+	}
+}
+
+type blockingAccountsRepository struct {
+	started  chan struct{}
+	canceled chan struct{}
+	release  chan struct{}
+}
+
+func (r *blockingAccountsRepository) Accounts(ctx context.Context) ([]ledger.Account, error) {
+	r.started <- struct{}{}
+	select {
+	case <-ctx.Done():
+		close(r.canceled)
+		return nil, ctx.Err()
+	case <-r.release:
+		return []ledger.Account{}, nil
+	}
+}
+func (*blockingAccountsRepository) Search(context.Context, ledger.Query) (ledger.Page, error) {
+	return ledger.Page{}, nil
+}
+func (*blockingAccountsRepository) Categories(context.Context) (ledger.Categories, error) {
+	return ledger.Categories{}, nil
+}
+func (*blockingAccountsRepository) Balance(context.Context, string, string) (ledger.Balance, error) {
+	return ledger.Balance{}, nil
+}
+func (*blockingAccountsRepository) Summary(context.Context, ledger.SummaryQuery) (ledger.Summary, error) {
+	return ledger.Summary{}, nil
+}
+
+func TestMCPCancelsInFlightRepositoryReadOnDisconnect(t *testing.T) {
+	repo := &blockingAccountsRepository{started: make(chan struct{}, 1), canceled: make(chan struct{}), release: make(chan struct{})}
+	svc := ledger.NewService(repo, config.Config{Timezone: "US/Central"})
+	ts := httptest.NewServer(server.NewHandler(svc, httpapi.Options{Token: []byte(token)}, adapter.NewTransportHandler(svc)))
+	defer func() { close(repo.release); ts.Close() }()
+	session := connect(t, ts.URL+"/mcp")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "list_accounts", Arguments: map[string]any{}})
+		done <- err
+	}()
+	select {
+	case <-repo.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("repository call did not start")
+	}
+	cancel()
+	select {
+	case <-repo.canceled:
+	case <-time.After(1 * time.Second):
+		t.Fatal("repository context survived client cancellation")
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled client call did not finish")
 	}
 }

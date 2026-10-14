@@ -22,5 +22,5 @@ func NewHandler(service *ledger.Service, opts Options) http.Handler {
 func NewTransportHandler(service *ledger.Service) http.Handler {
 	s := sdk.NewServer(&sdk.Implementation{Name: "dinero", Version: "0.1.0"}, nil)
 	registerTools(s, service)
-	return sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return s }, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	return sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return s }, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true, DisableLocalhostProtection: true, PropagateRequestCancellation: true})
 }
