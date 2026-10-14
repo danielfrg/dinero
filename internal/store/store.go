@@ -3,12 +3,9 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/danielfrg/dinero/internal/ledger"
@@ -38,7 +35,7 @@ func Open(ctx context.Context, dsn string, readOnly bool, timezone string) (*Sto
 		}
 		dialect = "postgres"
 		driverDSN = dsn
-	} else if readOnly {
+	} else {
 		var sqliteURI *url.URL
 		if strings.HasPrefix(dsn, "file:") {
 			sqliteURI, err = url.Parse(dsn)
@@ -51,8 +48,13 @@ func Open(ctx context.Context, dsn string, readOnly bool, timezone string) (*Sto
 			return nil, &ledger.ErrInvalidInput{Field: "database", Reason: "invalid SQLite path"}
 		}
 		query := sqliteURI.Query()
-		query.Set("mode", "ro")
-		query.Add("_pragma", "query_only(1)")
+		if readOnly {
+			query.Set("mode", "ro")
+			query.Add("_pragma", "query_only(1)")
+		} else {
+			query.Set("_txlock", "immediate")
+			query.Add("_pragma", "busy_timeout(5000)")
+		}
 		sqliteURI.RawQuery = query.Encode()
 		driverDSN = sqliteURI.String()
 	}
@@ -88,45 +90,6 @@ func (s *Store) readTx(parent context.Context) (*sql.Tx, context.Context, contex
 		return nil, nil, nil, &ledger.ErrUnavailable{}
 	}
 	return tx, ctx, cancel, nil
-}
-func (s *Store) WithWriteTx(ctx context.Context, fn func(*sql.Tx) error) error {
-	if s.readOnly {
-		return errors.New("store is read-only")
-	}
-	var lock *os.File
-	if s.dialect == "sqlite" {
-		var err error
-		lock, err = os.OpenFile(s.dsn+".lock", os.O_CREATE|os.O_RDWR, 0600)
-		if err != nil {
-			return err
-		}
-		defer lock.Close()
-		for {
-			err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-			if err == nil {
-				break
-			}
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if s.dialect == "postgres" {
-		if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(20261014)"); err != nil {
-			return err
-		}
-	}
-	if err = fn(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
 }
 func (s *Store) placeholder(n int) string {
 	if s.dialect == "postgres" {

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -46,7 +47,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			return err
 		},
 	})
-	root.AddCommand(newSearchCommand(deps, &configPath), newBalanceCommand(deps, &configPath))
+	root.AddCommand(newSearchCommand(deps, &configPath), newBalanceCommand(deps, &configPath), newImportCSVCommand(deps, &configPath))
 	return root
 }
 
@@ -57,6 +58,13 @@ func Execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	root.SetOut(out)
 	root.SetErr(errOut)
 	if err := root.ExecuteContext(ctx); err != nil {
+		var exit *commandExit
+		if errors.As(err, &exit) {
+			if !exit.silent {
+				fmt.Fprintln(errOut, exit.message)
+			}
+			return exit.code
+		}
 		fmt.Fprintln(errOut, sanitizeError(err))
 		return 1
 	}
