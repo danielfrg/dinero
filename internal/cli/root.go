@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 
 	"github.com/danielfrg/dinero/internal/config"
@@ -16,11 +17,15 @@ const Version = "1.0.0-go"
 // Dependencies lets commands share config access without global state.
 type Dependencies struct {
 	LoadConfig func(string) (config.Config, error)
+	Listen     func(network, address string) (net.Listener, error)
 }
 
 func NewRoot(deps Dependencies) *cobra.Command {
 	if deps.LoadConfig == nil {
 		deps.LoadConfig = config.Load
+	}
+	if deps.Listen == nil {
+		deps.Listen = net.Listen
 	}
 	var configPath string
 	root := &cobra.Command{
@@ -47,7 +52,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			return err
 		},
 	})
-	root.AddCommand(newSearchCommand(deps, &configPath), newBalanceCommand(deps, &configPath), newImportCSVCommand(deps, &configPath))
+	root.AddCommand(newSearchCommand(deps, &configPath), newBalanceCommand(deps, &configPath), newImportCSVCommand(deps, &configPath), newServeCommand(deps, &configPath))
 	return root
 }
 
