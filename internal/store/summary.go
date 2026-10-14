@@ -4,14 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/danielfrg/dinero/internal/ledger"
 	"github.com/shopspring/decimal"
 )
 
-// validAmountSQL checks storage before converting to text. SQLite's text cast
-// shortens floats, which can conceal a tiny fractional cent.
+// validAmountSQL checks storage before decimal conversion. A conversion can
+// shorten floats, which could conceal a tiny fractional cent.
 func (s *Store) validAmountSQL() string {
 	if s.dialect == "postgres" {
 		return "amount IS NOT NULL AND amount > '-Infinity'::float8 AND amount < 'Infinity'::float8 AND mod(amount::numeric * 100,1)=0"
@@ -29,9 +30,9 @@ func (s *Store) Summary(ctx context.Context, q ledger.SummaryQuery) (ledger.Summ
 	if err != nil {
 		return ledger.Summary{}, err
 	}
-	table, amountText := "public.transactions", "amount::text"
+	table := "public.transactions"
 	if s.dialect == "sqlite" {
-		table, amountText = "transactions", "CAST(amount AS TEXT)"
+		table = "transactions"
 	}
 	key := "''"
 	switch q.GroupBy {
@@ -47,7 +48,7 @@ func (s *Store) Summary(ctx context.Context, q ledger.SummaryQuery) (ledger.Summ
 	default:
 		return ledger.Summary{}, &ledger.ErrInvalidInput{Field: "group_by", Reason: "unsupported group"}
 	}
-	stmt := "SELECT " + key + "," + amountText + ",CASE WHEN " + s.validAmountSQL() + " THEN 1 ELSE 0 END FROM " + table + where
+	stmt := "SELECT " + key + ",amount,CASE WHEN " + s.validAmountSQL() + " THEN 1 ELSE 0 END FROM " + table + where
 	tx, readCtx, cancel, err := s.readTx(ctx)
 	if err != nil {
 		return ledger.Summary{}, err
@@ -61,7 +62,8 @@ func (s *Store) Summary(ctx context.Context, q ledger.SummaryQuery) (ledger.Summ
 	defer rows.Close()
 	groups := map[string]*summaryAccumulator{}
 	for rows.Next() {
-		var keyValue, amount sql.NullString
+		var keyValue sql.NullString
+		var amount sql.NullFloat64
 		var valid int64
 		if err = rows.Scan(&keyValue, &amount, &valid); err != nil {
 			return ledger.Summary{}, &ledger.ErrUnavailable{}
@@ -76,10 +78,11 @@ func (s *Store) Summary(ctx context.Context, q ledger.SummaryQuery) (ledger.Summ
 			group.incomplete++
 			continue
 		}
-		value, parseErr := decimal.NewFromString(amount.String)
+		value, parseErr := decimal.NewFromString(strconv.FormatFloat(amount.Float64, 'f', -1, 64))
 		if parseErr != nil {
 			return ledger.Summary{}, &ledger.ErrUnavailable{}
 		}
+		value = value.RoundBank(2)
 		group.signed = group.signed.Add(value)
 		if value.IsPositive() {
 			group.outflows = group.outflows.Add(value)

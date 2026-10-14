@@ -90,6 +90,34 @@ func TestSummaryPreservesCentAfterLargeCancellation(t *testing.T) {
 	}
 }
 
+func TestSummaryNormalizesEachLargeCentBeforeAccumulation(t *testing.T) {
+	for _, kind := range []string{"sqlite", "postgres"} {
+		t.Run(kind, func(t *testing.T) {
+			var fx *testutil.Fixture
+			if kind == "sqlite" {
+				fx = testutil.NewSQLite(t)
+			} else {
+				fx = testutil.NewPostgres(t)
+			}
+			for i := 0; i < 25; i++ {
+				fx.InsertNullable(t, "2026-03-08 12:00:00", "large cent", "Transfers", "", 9999999999999.99, "Checking", "")
+				fx.InsertNullable(t, "2026-03-08 12:00:00", "large cent rounded by SQLite text", "Rent", "", 12345678901234.56, "Checking", "")
+			}
+			svc := ledger.NewService(fx.Open(t, "UTC"), config.Config{Timezone: "UTC"})
+			summary, err := svc.Summary(context.Background(), ledger.SummaryQuery{GroupBy: "category"})
+			if err != nil || len(summary.Groups) != 2 {
+				t.Fatalf("summary %+v %v", summary, err)
+			}
+			want := map[string]string{"Transfers": "249999999999999.75", "Rent": "308641972530864.00"}
+			for _, group := range summary.Groups {
+				if group.SignedTotal != want[group.Key] || group.Outflows != want[group.Key] || group.Inflows != "0.00" || group.Count != 25 || group.IncompleteAmountCount != 0 || summary.IncompleteAmountCount != 0 {
+					t.Fatalf("group %+v, incomplete %d", group, summary.IncompleteAmountCount)
+				}
+			}
+		})
+	}
+}
+
 func TestAccountsRejectsMalformedShortStoredDate(t *testing.T) {
 	fx := testutil.NewSQLite(t)
 	fx.Insert(t, "x", "malformed", 1, "Checking")
