@@ -14,43 +14,26 @@ Your imagination is the limit here!
 
 Install the latest Go release for macOS or Linux, on Intel/AMD or ARM64:
 
-```zsh
+```shell
 curl -fsSL https://github.com/danielfrg/dinero/releases/latest/download/install.sh | bash
 dinero --version
 ```
 
-The installer verifies the package's SHA-256 checksum and installs `dinero` in
-`/usr/local/bin` when writable, otherwise `~/.local/bin`. It prints instructions
-if the destination is missing from your `PATH`. Run it again to upgrade.
-
-To choose a release or installation directory:
-
-```zsh
-curl -fsSL https://github.com/danielfrg/dinero/releases/latest/download/install.sh \
-  | DINERO_VERSION=v1.2.3 DINERO_INSTALL_DIR="$HOME/.local/bin" bash
-```
-
-The install URL becomes available once the first Go release is published.
-Packages are also available on the [GitHub Releases page](https://github.com/danielfrg/dinero/releases).
-
 To install the newest published build from `main`:
 
-```zsh
+```shell
 curl -fsSL https://github.com/danielfrg/dinero/releases/download/main-latest/install.sh \
   | DINERO_CHANNEL=main bash
 ```
 
-Successful **Checks** runs for pushes to `main` trigger packages from that
-exact commit and update the `main-latest` prerelease. The binary reports a
-version such as `v0.0.0-main.gabcdef012345`, identifying the source commit.
-Run the same command again to upgrade. The main install URL becomes available
-after the first successful main publish. `DINERO_INSTALL_DIR` works for either
-channel; `DINERO_CHANNEL=main` cannot be combined with `DINERO_VERSION`.
+Use a docker image:
 
-Pushing a `v*` version tag publishes a tagged release. The default installer
-selects the latest stable tagged release. Main builds and version tags with a
-prerelease suffix use a separate release channel. Manual **Release** runs
-build the `dinero-release` artifact without publishing it.
+```shell
+docker run -p 127.0.0.1:8080:8080 \
+  -e DINERO_CONFIG_FILE=/run/dinero/config.toml \
+  --mount type=bind,src=/path/to/container-config,dst=/run/dinero \
+  ghcr.io/danielfrg/dinero:latest
+```
 
 ## Build
 
@@ -117,39 +100,3 @@ dinero serve
 REST and MCP connections do not require an API token or an `Authorization` header.
 
 This will expose all the data, run in a secure network only.
-
-## Docker image
-
-GitHub Actions builds and tests Linux AMD64 and ARM64 images. Successful checks
-on `main` publish `ghcr.io/danielfrg/dinero:latest` and `sha-<full-commit>`;
-version tags publish matching versioned images. Pull requests only build and
-test images. Images become available after the first successful publication.
-The workflow records the published digest for deployments to pin.
-
-Build and test an image locally:
-
-```zsh
-docker build -t dinero:local .
-bash scripts/container-smoke.sh dinero:local
-```
-
-The image starts `dinero serve` on port 8080 as UID/GID 65532. Mount a readable
-configuration directory and expose the port:
-
-```zsh
-docker run --rm --read-only \
-  -p 127.0.0.1:8080:8080 \
-  -e DINERO_CONFIG_FILE=/run/dinero/config.toml \
-  --mount type=bind,src=/path/to/container-config,dst=/run/dinero,readonly \
-  ghcr.io/danielfrg/dinero:latest
-```
-
-The mounted `config.toml` must be readable by the container user. PostgreSQL
-connections use the same database configuration as the CLI. For ingress or
-internal Service names, append `--allowed-host=dinero.example.com,dinero-api`
-and, for browser clients, `--allowed-origin=https://dinero.example.com`.
-These extend the allowlists in `[server]` without changing the shared config.
-The container serves reads; run ingestion and bank linking as separate CLI jobs.
-
-On first publication, set the GHCR package visibility to public before using
-anonymous pulls. See [GitHub's container registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
