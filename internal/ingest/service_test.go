@@ -3,6 +3,8 @@ package ingest_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -112,7 +114,7 @@ func TestChangedLoginNamesAliasWithoutWriting(t *testing.T) {
 	p := &fakeProvider{failOffset: 0, failErr: errors.New("the login details of this item have changed")}
 	cfg := config.Config{Timezone: "UTC", Plaid: config.Plaid{Tokens: map[string]string{"bank": "synthetic"}}}
 	_, err = ingest.New(s, cfg, p).Preview(context.Background(), 90, "2026-10-14")
-	if err == nil || !strings.Contains(err.Error(), "Credentials expired for account: bank") || !strings.Contains(err.Error(),"dinero link --update bank") {
+	if err == nil || !strings.Contains(err.Error(), "Credentials expired for account: bank") || !strings.Contains(err.Error(), "dinero link --update bank") {
 		t.Fatalf("changed-login error %v", err)
 	}
 }
@@ -179,5 +181,124 @@ func TestConcurrentCSVAndPlaidWritersDeduplicate(t *testing.T) {
 	var n int
 	if e := fx.DB.QueryRow("SELECT COUNT(*) FROM transactions").Scan(&n); e != nil || n != 1 {
 		t.Fatalf("concurrent rows %d %v", n, e)
+	}
+}
+
+func TestPostgresMatchingUsesRawUTCCalendarDay(t *testing.T) {
+	t.Setenv("DINERO_STATE_DIR", t.TempDir())
+	fx := testutil.NewPostgres(t)
+	fx.InsertNullable(t, "2026-09-01 04:59:59+00:00", "ExistingUTC", "", "", 4.25, "Checking", "kept")
+	fx.InsertNullable(t, "2026-09-01 04:59:59+00:00", "NewLocal", "", "", 9.00, "Checking", "kept")
+	s, err := store.Open(context.Background(), fx.DSN, false, "US/Central")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	localized, err := s.Transactions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := localized[0].Date.Format("2006-01-02"); got != "2026-08-31" {
+		t.Fatalf("query date localization changed: %s", got)
+	}
+	cfg := config.Config{Timezone: "US/Central", Plaid: config.Plaid{Tokens: map[string]string{"bank": "synthetic"}, AccountIDToName: map[string]string{"a": "Checking"}}}
+	p := &fakeProvider{failOffset: -1, pages: map[int]plaid.TransactionsPage{0: {Total: 2, Transactions: []plaid.Transaction{
+		{AccountID: "a", Date: "2026-09-01", Name: "ExistingUTC", Amount: 4.25},
+		{AccountID: "a", Date: "2026-08-31", Name: "NewLocal", Amount: 9.00},
+	}}}}
+	svc := ingest.New(s, cfg, p)
+	preview, err := svc.Preview(context.Background(), 90, "2026-10-14")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.ExistingTransactions != 1 || preview.NewTransactions != 1 || len(preview.Transactions) != 1 || preview.Transactions[0].Description != "NewLocal" {
+		t.Fatalf("wrong raw-day preview %+v", preview)
+	}
+	done, err := svc.Commit(context.Background(), preview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.ExistingTransactions != 1 || done.NewTransactions != 1 || done.Transactions[0].Description != "NewLocal" {
+		t.Fatalf("wrong raw-day commit %+v", done)
+	}
+	var existingUTC, newLocal int
+	if err := fx.DB.QueryRow("SELECT count(*) FROM transactions WHERE description='ExistingUTC'").Scan(&existingUTC); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.DB.QueryRow("SELECT count(*) FROM transactions WHERE description='NewLocal'").Scan(&newLocal); err != nil {
+		t.Fatal(err)
+	}
+	if existingUTC != 1 || newLocal != 2 {
+		t.Fatalf("unexpected persisted multiplicity UTC=%d local=%d", existingUTC, newLocal)
+	}
+}
+
+func TestBrokenRulesAbortPreviewAndCommit(t *testing.T) {
+	cases := []struct {
+		name      string
+		breakFile func(*testing.T, string)
+	}{
+		{"malformed", func(t *testing.T, path string) {
+			t.Helper()
+			if err := os.WriteFile(path, []byte(`{"Coffee":`), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"wrong-pair", func(t *testing.T, path string) {
+			t.Helper()
+			if err := os.WriteFile(path, []byte(`{"Coffee":["Food"]}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"read-error", func(t *testing.T, path string) {
+			t.Helper()
+			if err := os.Mkdir(path, 0700); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, dialect := range []string{"sqlite", "postgres"} {
+				t.Run(dialect, func(t *testing.T) {
+					state := t.TempDir()
+					t.Setenv("DINERO_STATE_DIR", state)
+					var fx *testutil.Fixture
+					if dialect == "postgres" {
+						fx = testutil.NewPostgres(t)
+					} else {
+						fx = testutil.NewSQLite(t)
+					}
+					s, err := store.Open(context.Background(), fx.DSN, false, "UTC")
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer s.Close()
+					cfg := config.Config{Timezone: "UTC", Plaid: config.Plaid{Tokens: map[string]string{"bank": "synthetic"}, AccountIDToName: map[string]string{"a": "Checking"}}}
+					p := &fakeProvider{failOffset: -1, pages: map[int]plaid.TransactionsPage{0: {Total: 1, Transactions: []plaid.Transaction{{AccountID: "a", Date: "2026-10-14", Name: "Coffee", Amount: 4.25}}}}}
+					svc := ingest.New(s, cfg, p)
+					path := filepath.Join(state, "category_rules.json")
+					tc.breakFile(t, path)
+					if _, err := svc.Preview(context.Background(), 90, "2026-10-14"); err == nil || !strings.Contains(err.Error(), "category rules") {
+						t.Fatalf("expected rules preview failure, got %v", err)
+					}
+					if err := os.RemoveAll(path); err != nil {
+						t.Fatal(err)
+					}
+					preview, err := svc.Preview(context.Background(), 90, "2026-10-14")
+					if err != nil {
+						t.Fatal(err)
+					}
+					tc.breakFile(t, path)
+					if _, err := svc.Commit(context.Background(), preview); err == nil || !strings.Contains(err.Error(), "category rules") {
+						t.Fatalf("expected rules commit failure, got %v", err)
+					}
+					var n int
+					if err := fx.DB.QueryRow("SELECT count(*) FROM transactions").Scan(&n); err != nil || n != 0 {
+						t.Fatalf("rules failure wrote %d rows: %v", n, err)
+					}
+				})
+			}
+		})
 	}
 }

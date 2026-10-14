@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -102,11 +103,11 @@ func (s *Service) Preview(ctx context.Context, days int, through string) (Result
 			}
 		}
 	}
-	existing, err := s.store.Transactions(ctx)
+	existing, err := s.store.IngestionTransactions(ctx)
 	if err != nil {
 		return Result{}, err
 	}
-	return s.classify(start, end, all, existing), nil
+	return s.classify(start, end, all, existing)
 }
 
 func (s *Service) Commit(ctx context.Context, preview Result) (Result, error) {
@@ -123,11 +124,14 @@ func (s *Service) Commit(ctx context.Context, preview Result) (Result, error) {
 	}
 	var result Result
 	err := s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
-		existing, e := s.store.TransactionsTx(ctx, tx)
+		existing, e := s.store.IngestionTransactionsTx(ctx, tx)
 		if e != nil {
 			return e
 		}
-		result = s.classify(start, end, preview.records, existing)
+		result, e = s.classify(start, end, preview.records, existing)
+		if e != nil {
+			return e
+		}
 		if len(result.Transactions) == 0 {
 			return nil
 		}
@@ -157,14 +161,17 @@ type key struct {
 	amount                     float64
 }
 
-func (s *Service) classify(start, end time.Time, records []plaid.Transaction, existing []ledger.Transaction) Result {
+func (s *Service) classify(start, end time.Time, records []plaid.Transaction, existing []store.IngestionTransaction) (Result, error) {
 	byKey := map[key]bool{}
 	for _, row := range existing {
-		if row.Date != nil && row.Amount != nil {
-			byKey[key{row.Date.In(s.loc).Format("2006-01-02"), row.Account, row.Description, *row.Amount}] = true
+		if row.Date.Valid && row.Amount.Valid && row.Description.Valid && row.Account.Valid {
+			byKey[key{row.Date.String, row.Account.String, row.Description.String, row.Amount.Float64}] = true
 		}
 	}
-	rules := readRules()
+	rules, err := readRules()
+	if err != nil {
+		return Result{}, err
+	}
 	result := Result{Status: "dry-run", Start: start.Format("2006-01-02"), Through: end.Format("2006-01-02"), TransactionsQueried: len(records), MissingAccountIDs: []string{}, Transactions: []Record{}, records: records}
 	missing := map[string]bool{}
 	for _, tr := range records {
@@ -193,13 +200,39 @@ func (s *Service) classify(start, end time.Time, records []plaid.Transaction, ex
 	if result.NewTransactions == 0 {
 		result.Status = "no-new-transactions"
 	}
-	return result
+	return result, nil
 }
-func readRules() map[string][2]string {
+func readRules() (map[string][2]string, error) {
 	out := map[string][2]string{}
 	b, e := os.ReadFile(filepath.Join(config.StateDir(), "category_rules.json"))
-	if e == nil {
-		_ = json.Unmarshal(b, &out)
+	if errors.Is(e, os.ErrNotExist) {
+		return out, nil
 	}
-	return out
+	if e != nil {
+		return nil, fmt.Errorf("read category rules: %w", e)
+	}
+	var raw map[string]json.RawMessage
+	if e := json.Unmarshal(b, &raw); e != nil {
+		return nil, fmt.Errorf("decode category rules: %w", e)
+	}
+	if raw == nil {
+		return nil, errors.New("decode category rules: expected object")
+	}
+	for description, value := range raw {
+		var pair []json.RawMessage
+		if e := json.Unmarshal(value, &pair); e != nil || len(pair) != 2 {
+			return nil, fmt.Errorf("decode category rules: %q must have category and subcategory", description)
+		}
+		var category [2]string
+		for i := range pair {
+			if bytes.Equal(bytes.TrimSpace(pair[i]), []byte("null")) {
+				return nil, fmt.Errorf("decode category rules: %q contains null", description)
+			}
+			if e := json.Unmarshal(pair[i], &category[i]); e != nil {
+				return nil, fmt.Errorf("decode category rules: %q contains a non-string value", description)
+			}
+		}
+		out[description] = category
+	}
+	return out, nil
 }
