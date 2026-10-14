@@ -1,0 +1,93 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+
+	"github.com/danielfrg/dinero/internal/config"
+	"github.com/danielfrg/dinero/internal/plaid"
+	"github.com/spf13/cobra"
+)
+
+// Version is injected from release metadata by the image and release builds.
+var Version = "dev"
+
+// Dependencies lets commands share config access without global state.
+type Dependencies struct {
+	IsTerminal   func(io.Reader) bool
+	LoadConfig   func(string) (config.Config, error)
+	Listen       func(network, address string) (net.Listener, error)
+	PlaidClient  plaid.Client
+	LinkProvider plaid.LinkProvider
+	LinkClock    plaid.LinkClock
+	OpenBrowser  func(context.Context, string) error
+}
+
+func NewRoot(deps Dependencies) *cobra.Command {
+	if deps.LoadConfig == nil {
+		deps.LoadConfig = config.Load
+	}
+	if deps.Listen == nil {
+		deps.Listen = net.Listen
+	}
+	var configPath string
+	root := &cobra.Command{
+		Use:           "dinero",
+		Short:         "Personal finance tracking tools",
+		Version:       Version,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	root.PersistentFlags().StringVar(&configPath, "config", "", "configuration file path")
+	root.AddCommand(&cobra.Command{
+		Use:   "config",
+		Short: "Show the configuration with secrets redacted",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := config.ResolvePath(configPath)
+			cfg, err := deps.LoadConfig(path)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(cmd.ErrOrStderr(), path); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), cfg.Redacted())
+			return err
+		},
+	})
+	root.AddCommand(newSearchCommand(deps, &configPath), newBalanceCommand(deps, &configPath), newImportCSVCommand(deps, &configPath), newServeCommand(deps, &configPath))
+	root.AddCommand(newTransactionsCommand(deps, &configPath), newInitDBCommand(deps, &configPath), newRulesCommand(deps, &configPath), newCacheCommand(deps, &configPath), newExportCommand(deps, &configPath))
+	root.AddCommand(newLinkCommand(deps, &configPath))
+	return root
+}
+
+func Execute(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) int {
+	root := NewRoot(Dependencies{})
+	root.SetArgs(args)
+	root.SetIn(in)
+	root.SetOut(out)
+	root.SetErr(errOut)
+	if err := root.ExecuteContext(ctx); err != nil {
+		var exit *commandExit
+		if errors.As(err, &exit) {
+			if !exit.silent {
+				fmt.Fprintln(errOut, exit.message)
+			}
+			return exit.code
+		}
+		fmt.Fprintln(errOut, sanitizeError(err))
+		return 1
+	}
+	return 0
+}
+
+func sanitizeError(err error) string {
+	if os.IsNotExist(err) {
+		return "configuration file not found"
+	}
+	return err.Error()
+}

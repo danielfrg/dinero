@@ -1,0 +1,11 @@
+{
+  "status": "dry-run",
+  "file": "import.csv",
+  "account": "Test Account",
+  "transactions_in_csv": 1,
+  "new_transactions": 1,
+  "existing_transactions": 0,
+  "ambiguous_transactions": 0,
+  "transactions": [{"row": 2, "date": "2026-09-02", "description": "Coffee", "amount": "4.25", "category": "", "subcategory": ""}],
+  "ambiguous": []
+}

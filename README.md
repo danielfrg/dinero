@@ -1,18 +1,50 @@
 # dinero
 
-Tools and scripts to manage my personal finances.
-Your own Mint/YNAB, self hosted.
+Tools to manage my finances.
 
-- [Plaid](https://plaid.com) for collecting transactions from financial institutions
-- SQL Database for storing transactions
-  - I personally use Postgres but any SQLAlchemy compatible DB should work
-  - This README uses SQLite
-  - I use [Mathesar](https://mathesar.org/) as a viewer and editor for Account,
-    Category, and other transaction data
-  - I use [Metabase](https://www.metabase.com/) to create dashboards
-  - Your imagination is the limit here!
-  - You can read more about how I use this + some screenshots [in my wiki](https://wiki.danielfrg.com/homelab/dinero/).
-- Inspired by [yyx990803/build-your-own-mint](https://github.com/yyx990803/build-your-own-mint).
+- Transaction tracker
+  - Plaid for collecting transactions from financial institutions
+  - SQL Database for storing transactions
+- MCP server for agents to read transactions
+
+I use Mathesar as a viewer and editor and Metabase to create dashboards.
+Your imagination is the limit here!
+
+## Install
+
+Install the latest Go release for macOS or Linux, on Intel/AMD or ARM64:
+
+```shell
+curl -fsSL https://github.com/danielfrg/dinero/releases/latest/download/install.sh | bash
+dinero --version
+```
+
+To install the newest published build from `main`:
+
+```shell
+curl -fsSL https://github.com/danielfrg/dinero/releases/download/main-latest/install.sh \
+  | DINERO_CHANNEL=main bash
+```
+
+Use a docker image:
+
+```shell
+docker run -p 127.0.0.1:8080:8080 \
+  -e DINERO_CONFIG_FILE=/run/dinero/config.toml \
+  --mount type=bind,src=/path/to/container-config,dst=/run/dinero \
+  ghcr.io/danielfrg/dinero:latest
+```
+
+## Build
+
+```shell
+just build
+```
+
+Copy [config.sample.toml](config.sample.toml) to `~/.config/dinero/config.toml`.
+Use `DINERO_CONFIG_FILE` or `--config` to select a different file.
+
+PostgreSQL and SQLite URLs use the existing `[database].connection_string` format, including `postgresql+psycopg://` and `sqlite:///`.
 
 ## Requirements
 
@@ -25,134 +57,46 @@ Your own Mint/YNAB, self hosted.
   you are not a company and that you will use it for personal use
 - Get your `client_id` and `secret` from the [Plaid dashboard](https://dashboard.plaid.com/developers/keys)
 
-#### Logging in to Banks
+Make sure your config file contains your Plaid credentials alongside your existing database configuration:
 
-Use the [plaid/quickstart](https://github.com/plaid/quickstart.git)
-to login to your institution.
-
-Once you've linked the bank save the `ACCESS_TOKEN`. in the config file. See [settings](#config) below.
-
-### Database
-
-Simply write the [SQLAlchemy](https://www.sqlalchemy.org) connection string
-in the config file.
-
-## Config
-
-The project reads it's config from `~/.config/dinero/config.toml`.
-You can see a sample in [config.sample.toml](config.sample.toml).
-
-For Plaid you need to set the token for each institution:
-
-```toml
-[plaid.tokens]
-bank_1 = "access-development-XXXXXXXXXXXXXXXX"
-bank_2 = "access-development-YYYYYYYYYYYYYYYY"
+```
+[plaid]
+client_id = "YOUR_CLIENT_ID"
+secret = "YOUR_PRODUCTION_SECRET"
+env = "production"
+products = "transactions"
 ```
 
-And a mapping to make the Account ID human readable:
+Start a new connection with:
 
-```toml
-[plaid.account_id_to_name]
-THIS_IS_A_LONG_ID_1_XXXXXXXXXXXXXXXXXXXXXX = "Bank 1 Checking"
-THIS_IS_A_LONG_ID_2_YYYYYYYYYYYYYYYYYYYYYY = "Bank 2 Credit Card"
 ```
+dinero link <name: e.g. chase>
+
+# To update/refresh a connection
+dinero link --update <name: e.g. chase>
+```
+
+And follow the auth flow with your institution.
 
 ## Usage
 
-After you have the requirements and config file.
-
-Install by cloning the repo and installing the dependencies using your favorite
-Python environment manager.
-
-Create DB and tables:
-
-```terminal
-dinero init-db
 ```
-
-Get new transactions and add them to the database:
-
-```terminal
+# See transactions from Plaid
 dinero transactions
+
+# commit them to the database
+dinero transactions --commit
 ```
 
-Compute an account's cumulative amount through the end of a date:
+## Read-only API
 
-```terminal
-dinero balance --account "Bank 1 Checking" --through 2026-08-31
+```
+dinero serve
 ```
 
-Preview a CSV import. CSV imports are dry runs unless `--commit` is supplied:
+- REST reads are under `/api`, with OpenAPI at `/api/openapi.json`
+- MCP uses `/mcp` and six read-only tools
 
-```terminal
-dinero import-csv ./transactions.csv "Bank 1 Checking"
-dinero import-csv ./transactions.csv "Bank 1 Checking" --commit
-```
+REST and MCP connections do not require an API token or an `Authorization` header.
 
-Use `--yes` with `--commit` for an unattended import. Commands that support
-`--json` write only JSON to stdout; diagnostics are written to stderr.
-
-Example output:
-
-```terminal
-2023-09-21 11:06.45 [info     ] Transactions downloaded        name=XXX records=49
-2023-09-21 11:06.45 [info     ] Transactions pending           name=XXX records=1
-2023-09-21 11:06.45 [info     ] Transactions not pending       name=XXX records=48
-2023-09-21 11:06.58 [info     ] Loaded table                   recods=662 year=2023
---------------------------------------------------------------------------------
-My Bank - Checking
---------------------------------------------------------------------------------
-2023-09-21 11:06.58 [info     ] Queried transactions           n=17
-2023-09-21 11:06.58 [info     ] Pending transactions           n=0
-2023-09-21 11:06.58 [info     ] New transactions to be added   n=2
-2023-09-21 11:06.58 [info     ] Transaction                    transaction={'Account': 'Bank of America Checking', 'Amount': XXX, 'Category': '', 'Date': '2023-09-20', 'Description': 'XXXX', 'Subcategory': ''}
-2023-09-21 11:06.58 [info     ] Transaction                    transaction={'Account': 'Bank of America Checking', 'Amount': XXX, 'Category': '', 'Date': '2023-09-20', 'Description': 'XXXX', 'Subcategory': ''}
-2023-09-21 11:06.58 [info     ] Existing transactions          n=15
-2023-09-21 11:06.58 [info     ] Error transactions             n=0
-
-================================================================================
-All accounts summary from 2023-08-22 to 2023-09-21:
-================================================================================
-Using Table for year: 2023
-Records in table: 662
-Transactions queried: 49
-Pending transactions: 1
-Transactions analysed (pending False): 48
-New records to be inserted: 5
-Existing transactions: 43
-Errors transactions (not valid dates for table): 0
-
-Insert transactions to the Table? [Y/n]
-```
-
-Generate a set of simple rules that will be used to categorize transactions:
-
-```terminal
-just rules
-```
-
-Generate a dataset with all transactions in CSV and SQLite:
-
-```terminal
-just dataset
-```
-
-### Other
-
-There is a handy function to generate a Pandas DataFrame with all transactions:
-I use this to do some analysis in a Jupyter Notebook.
-
-```python
-from dinero import analysis
-df = analysis.get_dataframe()
-```
-
-## Contributions
-
-While I am happy to accept any contributions this is 100% tailored to how I use
-it so I might reject stuff I won't use.
-
-If you want to do other things such as connecting to Airtable
-(initially I used Airtable but the new pricing made it not worth it)
-you should fork this repo and make your own changes.
+This will expose all the data, run in a secure network only.

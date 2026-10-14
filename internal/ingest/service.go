@@ -1,0 +1,301 @@
+package ingest
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/danielfrg/dinero/internal/config"
+	"github.com/danielfrg/dinero/internal/ledger"
+	"github.com/danielfrg/dinero/internal/plaid"
+	"github.com/danielfrg/dinero/internal/store"
+)
+
+type Record struct {
+	Date        string  `json:"date"`
+	Description string  `json:"description"`
+	Account     string  `json:"account"`
+	Amount      float64 `json:"amount"`
+	Category    string  `json:"category"`
+	Subcategory string  `json:"subcategory"`
+}
+type AccountSummary struct {
+	Account              string
+	TransactionsQueried  int
+	PendingTransactions  int
+	NewTransactions      int
+	ExistingTransactions int
+	Pending              []Record
+	Transactions         []Record
+}
+type FetchProgress struct {
+	Alias               string
+	Start               string
+	Through             string
+	Completed           bool
+	TransactionsQueried int
+	PendingTransactions int
+}
+type Result struct {
+	Status               string           `json:"status"`
+	Start                string           `json:"start"`
+	Through              string           `json:"through"`
+	TransactionsQueried  int              `json:"transactions_queried"`
+	PendingTransactions  int              `json:"pending_transactions"`
+	NewTransactions      int              `json:"new_transactions"`
+	ExistingTransactions int              `json:"existing_transactions"`
+	MissingAccountIDs    []string         `json:"missing_account_ids"`
+	Transactions         []Record         `json:"transactions"`
+	RecordsInTable       int              `json:"-"`
+	Accounts             []AccountSummary `json:"-"`
+	records              []plaid.Transaction
+}
+type Service struct {
+	store    *store.Store
+	cfg      config.Config
+	provider plaid.Client
+	loc      *time.Location
+}
+
+func New(s *store.Store, cfg config.Config, p plaid.Client) *Service {
+	loc, e := time.LoadLocation(cfg.Timezone)
+	if e != nil {
+		loc = time.UTC
+	}
+	return &Service{store: s, cfg: cfg, provider: p, loc: loc}
+}
+
+func (s *Service) Preview(ctx context.Context, days int, through string) (Result, error) {
+	return s.PreviewWithProgress(ctx, days, through, nil)
+}
+
+func (s *Service) PreviewWithProgress(ctx context.Context, days int, through string, progress func(FetchProgress) error) (Result, error) {
+	if days <= 0 {
+		return Result{}, errors.New("days must be positive")
+	}
+	var end time.Time
+	var err error
+	if through == "" {
+		end = time.Now().In(s.loc)
+	} else {
+		end, err = time.ParseInLocation("2006-01-02", through, s.loc)
+		if err != nil {
+			return Result{}, errors.New("through must be YYYY-MM-DD")
+		}
+	}
+	start := end.AddDate(0, 0, -days)
+	all := []plaid.Transaction{}
+	aliases := make([]string, 0, len(s.cfg.Plaid.Tokens))
+	for alias := range s.cfg.Plaid.Tokens {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	if len(aliases) > 0 && s.provider == nil {
+		return Result{}, errors.New("Plaid client is required")
+	}
+	for _, alias := range aliases {
+		event := FetchProgress{Alias: alias, Start: start.Format("2006-01-02"), Through: end.Format("2006-01-02")}
+		if progress != nil {
+			if err := progress(event); err != nil {
+				return Result{}, err
+			}
+		}
+		token := s.cfg.Plaid.Tokens[alias]
+		for offset := 0; ; {
+			page, e := s.provider.GetTransactions(ctx, token, start, end, offset)
+			if e != nil {
+				var loginRequired *plaid.ErrLoginRequired
+				lower := strings.ToLower(e.Error())
+				if errors.As(e, &loginRequired) || strings.Contains(lower, "the login details of this item have changed") || strings.Contains(lower, "item_login_required") {
+					return Result{}, fmt.Errorf("Credentials expired for account: %s; run dinero link --update %s", alias, alias)
+				}
+				return Result{}, fmt.Errorf("Plaid transaction fetch failed for account %s", alias)
+			}
+			if page.Total < 0 || page.Total < offset+len(page.Transactions) {
+				return Result{}, errors.New("Plaid returned inconsistent pagination")
+			}
+			all = append(all, page.Transactions...)
+			event.TransactionsQueried += len(page.Transactions)
+			for _, tr := range page.Transactions {
+				if tr.Pending {
+					event.PendingTransactions++
+				}
+			}
+			offset += len(page.Transactions)
+			if offset >= page.Total {
+				break
+			}
+			if len(page.Transactions) == 0 {
+				return Result{}, errors.New("Plaid pagination stopped before total transactions")
+			}
+		}
+		if progress != nil {
+			event.Completed = true
+			if err := progress(event); err != nil {
+				return Result{}, err
+			}
+		}
+	}
+	existing, err := s.store.IngestionTransactions(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	return s.classify(start, end, all, existing)
+}
+
+func (s *Service) Commit(ctx context.Context, preview Result) (Result, error) {
+	if preview.Start == "" || preview.Through == "" {
+		return Result{}, errors.New("invalid transactions preview")
+	}
+	start, e := time.ParseInLocation("2006-01-02", preview.Start, s.loc)
+	if e != nil {
+		return Result{}, e
+	}
+	end, e := time.ParseInLocation("2006-01-02", preview.Through, s.loc)
+	if e != nil {
+		return Result{}, e
+	}
+	var result Result
+	err := s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
+		existing, e := s.store.IngestionTransactionsTx(ctx, tx)
+		if e != nil {
+			return e
+		}
+		result, e = s.classify(start, end, preview.records, existing)
+		if e != nil {
+			return e
+		}
+		if len(result.Transactions) == 0 {
+			return nil
+		}
+		rows := make([]ledger.Transaction, 0, len(result.Transactions))
+		for _, r := range result.Transactions {
+			date, e := time.ParseInLocation("2006-01-02", r.Date, s.loc)
+			if e != nil {
+				return e
+			}
+			amount := r.Amount
+			rows = append(rows, ledger.Transaction{Date: &date, Description: r.Description, Category: r.Category, Subcategory: r.Subcategory, Amount: &amount, Account: r.Account, Notes: "new"})
+		}
+		if e := s.store.InsertTransactionsTx(ctx, tx, rows); e != nil {
+			return e
+		}
+		result.Status = "imported"
+		return nil
+	})
+	if err != nil {
+		return Result{}, fmt.Errorf("transactions not committed: %w", err)
+	}
+	return result, nil
+}
+
+type key struct {
+	date, account, description string
+	amount                     float64
+}
+
+func (s *Service) classify(start, end time.Time, records []plaid.Transaction, existing []store.IngestionTransaction) (Result, error) {
+	byKey := map[key]bool{}
+	for _, row := range existing {
+		if row.Date.Valid && row.Amount.Valid && row.Description.Valid && row.Account.Valid {
+			byKey[key{row.Date.String, row.Account.String, row.Description.String, row.Amount.Float64}] = true
+		}
+	}
+	rules, err := readRules()
+	if err != nil {
+		return Result{}, err
+	}
+	result := Result{Status: "dry-run", Start: start.Format("2006-01-02"), Through: end.Format("2006-01-02"), TransactionsQueried: len(records), RecordsInTable: len(existing), MissingAccountIDs: []string{}, Transactions: []Record{}, Accounts: []AccountSummary{}, records: records}
+	missing := map[string]bool{}
+	accounts := map[string]*AccountSummary{}
+	for _, tr := range records {
+		account := s.cfg.Plaid.AccountIDToName[tr.AccountID]
+		if account == "" {
+			account = tr.AccountID
+			if !missing[tr.AccountID] {
+				result.MissingAccountIDs = append(result.MissingAccountIDs, tr.AccountID)
+				missing[tr.AccountID] = true
+			}
+		}
+		summary := accounts[account]
+		if summary == nil {
+			summary = &AccountSummary{Account: account, Pending: []Record{}, Transactions: []Record{}}
+			accounts[account] = summary
+		}
+		summary.TransactionsQueried++
+		record := Record{Date: tr.Date, Description: tr.Name, Account: account, Amount: tr.Amount}
+		if tr.Pending {
+			result.PendingTransactions++
+			summary.PendingTransactions++
+			summary.Pending = append(summary.Pending, record)
+			continue
+		}
+		k := key{tr.Date, account, tr.Name, tr.Amount}
+		if byKey[k] {
+			result.ExistingTransactions++
+			summary.ExistingTransactions++
+			continue
+		}
+		category := rules[tr.Name]
+		record.Category, record.Subcategory = category[0], category[1]
+		result.Transactions = append(result.Transactions, record)
+		summary.Transactions = append(summary.Transactions, record)
+		result.NewTransactions++
+		summary.NewTransactions++
+	}
+	accountNames := make([]string, 0, len(accounts))
+	for account := range accounts {
+		accountNames = append(accountNames, account)
+	}
+	sort.Strings(accountNames)
+	for _, account := range accountNames {
+		result.Accounts = append(result.Accounts, *accounts[account])
+	}
+	sort.Strings(result.MissingAccountIDs)
+	if result.NewTransactions == 0 {
+		result.Status = "no-new-transactions"
+	}
+	return result, nil
+}
+func readRules() (map[string][2]string, error) {
+	out := map[string][2]string{}
+	b, e := os.ReadFile(filepath.Join(config.StateDir(), "category_rules.json"))
+	if errors.Is(e, os.ErrNotExist) {
+		return out, nil
+	}
+	if e != nil {
+		return nil, fmt.Errorf("read category rules: %w", e)
+	}
+	var raw map[string]json.RawMessage
+	if e := json.Unmarshal(b, &raw); e != nil {
+		return nil, fmt.Errorf("decode category rules: %w", e)
+	}
+	if raw == nil {
+		return nil, errors.New("decode category rules: expected object")
+	}
+	for description, value := range raw {
+		var pair []json.RawMessage
+		if e := json.Unmarshal(value, &pair); e != nil || len(pair) != 2 {
+			return nil, fmt.Errorf("decode category rules: %q must have category and subcategory", description)
+		}
+		var category [2]string
+		for i := range pair {
+			if bytes.Equal(bytes.TrimSpace(pair[i]), []byte("null")) {
+				return nil, fmt.Errorf("decode category rules: %q contains null", description)
+			}
+			if e := json.Unmarshal(pair[i], &category[i]); e != nil {
+				return nil, fmt.Errorf("decode category rules: %q contains a non-string value", description)
+			}
+		}
+		out[description] = category
+	}
+	return out, nil
+}

@@ -1,0 +1,25 @@
+timezone = "UTC"
+custom_label = "keep-me"
+
+[database]
+connection_string = "postgresql+psycopg://user:sentinel-db-password@localhost:5432/dinero"
+
+[plaid]
+client_id = "sentinel-client-id"
+secret = "sentinel-plaid-secret"
+env = "sandbox"
+products = "transactions"
+
+[plaid.tokens]
+existing = "sentinel-access-token"
+
+[plaid.item_ids]
+existing = "item-existing"
+
+[plaid.account_id_to_name]
+account_existing = "Checking"
+
+[server]
+host = "127.0.0.1"
+port = 8080
+extra_setting = "keep-this-too"

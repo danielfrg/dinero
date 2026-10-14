@@ -1,19 +1,14 @@
-.git
-.venv
-
-# project
-dashboards/*.yml
-secret/
-
-# Ignore sensitive account configuration during build
-dashboards/accounts.yml
-
-# You might also want to ignore other things like:
-# .git
-# .venv
-# __pycache__
-# *.pyc
-# *.pyo
-# *.pyd
-# data/ # If you don't want local data included
-# secret/ # If you don't want the whole secret dir copied (though your Dockerfile doesn't copy it now)
+**
+!go.mod
+!go.sum
+!LICENSE.txt
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!testdata/
+!testdata/compat/
+!testdata/compat/config.toml
+!testdata/compat/import.csv
+!testdata/compat/import.json
+!testdata/compat/query.json
