@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,5 +56,15 @@ func TestConfigOutputRedactsEverySecret(t *testing.T) {
 	}
 	if !strings.Contains(out, "existing") || !strings.Contains(out, "UTC") {
 		t.Fatalf("missing public config fields: %q", out)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("stdout must contain one JSON value: %v; output %q", err, out)
+	}
+	if payload["timezone"] != "UTC" {
+		t.Fatalf("timezone = %v", payload["timezone"])
+	}
+	if !strings.Contains(errOut, path) {
+		t.Fatalf("stderr omitted resolved config path: %q", errOut)
 	}
 }

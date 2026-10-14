@@ -33,3 +33,33 @@ func TestStateDirIndependentOfConfigOverride(t *testing.T) {
 		t.Fatalf("state dir = %q", got)
 	}
 }
+
+func TestDefaultConfigAndStatePathsHonorXDGConfigHome(t *testing.T) {
+	xdg := filepath.Join(t.TempDir(), "xdg")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("DINERO_CONFIG_FILE", "unused")
+	if err := os.Unsetenv("DINERO_CONFIG_FILE"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DINERO_STATE_DIR", "")
+	wantDir := filepath.Join(xdg, "dinero")
+	if got := config.DefaultDir(); got != wantDir {
+		t.Errorf("DefaultDir = %q, want %q", got, wantDir)
+	}
+	if got := config.ResolvePath(""); got != filepath.Join(wantDir, "config.toml") {
+		t.Errorf("ResolvePath = %q", got)
+	}
+	if got := config.StateDir(); got != wantDir {
+		t.Errorf("StateDir = %q, want %q", got, wantDir)
+	}
+}
+
+func TestDefaultDirFallsBackToHomeConfigWhenXDGEmpty(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	want := filepath.Join(home, ".config", "dinero")
+	if got := config.DefaultDir(); got != want {
+		t.Fatalf("DefaultDir = %q, want %q", got, want)
+	}
+}

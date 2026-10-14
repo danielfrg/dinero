@@ -39,7 +39,10 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s\n%s\n", path, cfg.Redacted())
+			if _, err := fmt.Fprintln(cmd.ErrOrStderr(), path); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), cfg.Redacted())
 			return err
 		},
 	})
