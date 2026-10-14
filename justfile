@@ -1,31 +1,24 @@
 default:
     just --list
 
-# Go binary is the deployable CLI. Python remains available for existing consumers.
+# Build the Dinero CLI and server.
 build:
     mkdir -p bin
-    CGO_ENABLED=0 go build -o bin/dinero-go ./cmd/dinero
+    CGO_ENABLED=0 go build -o bin/dinero ./cmd/dinero
 
 check:
     go test ./...
     go vet ./...
     go test -race ./...
 
-compat: build
-    uv run --offline python testdata/compat/check.py --go-executable bin/dinero-go
-
 transactions: build
-    bin/dinero-go transactions --yes
+    bin/dinero transactions --yes
 
 rules: build
-    bin/dinero-go mkrules --commit --yes
+    bin/dinero mkrules --commit --yes
 
 dataset: build
-    bin/dinero-go mkdataset
-
-[working-directory: 'dashboards']
-dashboards:
-    uv run streamlit run balances.py
+    bin/dinero mkdataset
 
 image:
     docker buildx build --platform linux/amd64 -t dinero:local .

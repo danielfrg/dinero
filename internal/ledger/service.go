@@ -69,7 +69,7 @@ func (s *Service) Search(ctx context.Context, q Query) (Page, error) {
 	return p, err
 }
 
-// SearchLegacy preserves the explicit SQL LIMIT 0 accepted by the Python CLI.
+// SearchLegacy preserves the CLI's explicit SQL LIMIT 0 behavior.
 // Transport adapters continue to normalize omitted limits and reject zero.
 func (s *Service) SearchLegacy(ctx context.Context, q Query) (Page, error) {
 	if q.Limit == 0 {

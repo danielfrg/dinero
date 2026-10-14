@@ -23,8 +23,6 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const token = "synthetic-read-token-123456"
-
 func fixture(t *testing.T) (*ledger.Service, func()) {
 	t.Helper()
 	fx := testutil.NewSQLite(t)
@@ -43,7 +41,10 @@ func connect(t *testing.T, endpoint string) *sdk.ClientSession {
 func connectWithHost(t *testing.T, endpoint, host string) *sdk.ClientSession {
 	t.Helper()
 	client := sdk.NewClient(&sdk.Implementation{Name: "integration-test", Version: "0.1.0"}, nil)
-	transport := &sdk.StreamableClientTransport{Endpoint: endpoint, DisableStandaloneSSE: true, HTTPClient: &http.Client{Transport: hostedBearerTransport{base: http.DefaultTransport, host: host}}}
+	transport := &sdk.StreamableClientTransport{Endpoint: endpoint, DisableStandaloneSSE: true}
+	if host != "" {
+		transport.HTTPClient = &http.Client{Transport: hostOverrideTransport{base: http.DefaultTransport, host: host}}
+	}
 	session, err := client.Connect(context.Background(), transport, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -52,14 +53,13 @@ func connectWithHost(t *testing.T, endpoint, host string) *sdk.ClientSession {
 	return session
 }
 
-type hostedBearerTransport struct {
+type hostOverrideTransport struct {
 	base http.RoundTripper
 	host string
 }
 
-func (b hostedBearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+func (b hostOverrideTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
-	r.Header.Set("Authorization", "Bearer "+token)
 	if b.host != "" {
 		r.Host = b.host
 	}
@@ -89,7 +89,6 @@ func rest(t *testing.T, base, path string) map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
 		t.Fatal(err)
@@ -106,9 +105,9 @@ func rest(t *testing.T, base, path string) map[string]any {
 	return out
 }
 
-func TestRealHTTPClientListsAndCallsSixReadTools(t *testing.T) {
+func TestRealHTTPClientListsAndCallsSixReadToolsWithoutAuthentication(t *testing.T) {
 	svc, _ := fixture(t)
-	opts := httpapi.Options{Token: []byte(token)}
+	opts := httpapi.Options{}
 	ts := httptest.NewServer(server.NewHandler(svc, opts, adapter.NewTransportHandler(svc)))
 	defer ts.Close()
 	session := connect(t, ts.URL+"/mcp")
@@ -161,44 +160,50 @@ func TestRealHTTPClientListsAndCallsSixReadTools(t *testing.T) {
 	}
 }
 
-func TestMCPRejectsUnauthorizedAndUntrustedRequests(t *testing.T) {
+func TestMCPRejectsUntrustedRequests(t *testing.T) {
 	svc, _ := fixture(t)
-	h := adapter.NewHandler(svc, adapter.Options{Token: []byte(token)})
+	h := adapter.NewHandler(svc, adapter.Options{})
 	for _, method := range []string{"GET", "POST"} {
 		t.Run(method, func(t *testing.T) {
 			for _, tc := range []struct {
-				host, origin, auth string
-				want               int
+				host, origin string
+				want         int
 			}{
-				{"localhost", "", "", 401},
-				{"attacker.example", "", "Bearer " + token, 403},
-				{"localhost", "https://attacker.example", "Bearer " + token, 403},
+				{"attacker.example", "", 403},
+				{"localhost", "https://attacker.example", 403},
 			} {
 				r := httptest.NewRequest(method, "/mcp", nil)
 				r.Host = tc.host
 				r.Header.Set("Origin", tc.origin)
-				r.Header.Set("Authorization", tc.auth)
 				w := httptest.NewRecorder()
 				h.ServeHTTP(w, r)
 				if w.Code != tc.want {
-					t.Errorf("host=%s origin=%s auth=%s: %d", tc.host, tc.origin, tc.auth, w.Code)
+					t.Errorf("host=%s origin=%s: %d", tc.host, tc.origin, w.Code)
+				}
+				if strings.Contains(w.Body.String(), "Dinero MCP") {
+					t.Errorf("host=%s origin=%s received endpoint help before policy rejection", tc.host, tc.origin)
 				}
 			}
 		})
 	}
 	r := httptest.NewRequest("GET", "/mcp", nil)
 	r.Host = "localhost"
-	r.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("authenticated stateless GET: %d %s", w.Code, w.Body.String())
+		t.Fatalf("stateless GET without authentication: %d %s", w.Code, w.Body.String())
+	}
+	if w.Header().Get("Allow") != http.MethodPost || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Fatalf("MCP GET headers=%v", w.Header())
+	}
+	if body := w.Body.String(); !strings.Contains(body, "Dinero MCP") || !strings.Contains(body, "Streamable HTTP MCP client") || strings.Count(body, "\n") != 1 {
+		t.Fatalf("MCP GET does not explain how to connect in one line: %q", body)
 	}
 }
 
 func TestMCPAllowsConfiguredPublicHostForwardedToLoopback(t *testing.T) {
 	svc, _ := fixture(t)
-	policy := httpapi.Options{Token: []byte(token), AllowedHosts: []string{"ledger.example.test"}}
+	policy := httpapi.Options{AllowedHosts: []string{"ledger.example.test"}}
 	ts := httptest.NewServer(server.NewHandler(svc, policy, adapter.NewTransportHandler(svc)))
 	defer ts.Close()
 	session := connectWithHost(t, ts.URL+"/mcp", "ledger.example.test")
@@ -210,7 +215,6 @@ func TestMCPAllowsConfiguredPublicHostForwardedToLoopback(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.Host = "attacker.example"
-	r.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +227,7 @@ func TestMCPAllowsConfiguredPublicHostForwardedToLoopback(t *testing.T) {
 
 func TestMCPInvalidUnknownAndUnavailable(t *testing.T) {
 	svc, closeDB := fixture(t)
-	ts := httptest.NewServer(server.NewHandler(svc, httpapi.Options{Token: []byte(token)}, adapter.NewTransportHandler(svc)))
+	ts := httptest.NewServer(server.NewHandler(svc, httpapi.Options{}, adapter.NewTransportHandler(svc)))
 	defer ts.Close()
 	session := connect(t, ts.URL+"/mcp")
 	for _, args := range []map[string]any{{"limit": 0}, {"year": 0}, {"month": 0}, {"limit": 501}, {"offset": -1}, {"sort": "description; DROP TABLE transactions"}} {
@@ -281,7 +285,7 @@ func (*blockingAccountsRepository) Summary(context.Context, ledger.SummaryQuery)
 func TestMCPCancelsInFlightRepositoryReadOnDisconnect(t *testing.T) {
 	repo := &blockingAccountsRepository{started: make(chan struct{}, 1), canceled: make(chan struct{}), release: make(chan struct{})}
 	svc := ledger.NewService(repo, config.Config{Timezone: "US/Central"})
-	ts := httptest.NewServer(server.NewHandler(svc, httpapi.Options{Token: []byte(token)}, adapter.NewTransportHandler(svc)))
+	ts := httptest.NewServer(server.NewHandler(svc, httpapi.Options{}, adapter.NewTransportHandler(svc)))
 	defer func() { close(repo.release); ts.Close() }()
 	session := connect(t, ts.URL+"/mcp")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -322,7 +326,7 @@ func TestRESTAndMCPNonfiniteBalancePreservesCompleteness(t *testing.T) {
 				fx.Insert(t, "2026-03-08 12:00:00", "nonfinite", value, "Checking")
 				fx.Insert(t, "2026-03-08 12:00:00", "missing", nil, "Checking")
 				svc := ledger.NewService(fx.Open(t, "UTC"), config.Config{Timezone: "UTC"})
-				ts := httptest.NewServer(server.NewHandler(svc, httpapi.Options{Token: []byte(token)}, adapter.NewTransportHandler(svc)))
+				ts := httptest.NewServer(server.NewHandler(svc, httpapi.Options{}, adapter.NewTransportHandler(svc)))
 				defer ts.Close()
 				session := connect(t, ts.URL+"/mcp")
 				for _, got := range []map[string]any{rest(t, ts.URL, "/api/balance?account=Checking&through=2026-03-08"), call(t, session, "get_balance", map[string]any{"account": "Checking", "through": "2026-03-08"})} {

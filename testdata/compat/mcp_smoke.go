@@ -3,27 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type bearer struct{ base http.RoundTripper }
-
-func (b bearer) RoundTrip(request *http.Request) (*http.Response, error) {
-	request = request.Clone(request.Context())
-	request.Header.Set("Authorization", "Bearer "+os.Getenv("DINERO_API_TOKEN"))
-	return b.base.RoundTrip(request)
-}
 func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	client := mcp.NewClient(&mcp.Implementation{Name: "dinero-container-smoke", Version: "1"}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
 		Endpoint: os.Getenv("DINERO_MCP_URL"), DisableStandaloneSSE: true,
-		HTTPClient: &http.Client{Transport: bearer{base: http.DefaultTransport}},
 	}, nil)
 	if err != nil {
 		panic(err)

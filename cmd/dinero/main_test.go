@@ -29,10 +29,6 @@ func TestEntrypointSIGTERMDrainsActiveRead(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build entrypoint: %v %s", err, output)
 	}
-	token := filepath.Join(dir, "api-token")
-	if err := os.WriteFile(token, []byte("synthetic-read-token-123456"), 0600); err != nil {
-		t.Fatal(err)
-	}
 	cfg := filepath.Join(dir, "config.toml")
 	if err := os.WriteFile(cfg, []byte("timezone='UTC'\n[database]\nconnection_string='"+fx.DSN+"'\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -48,11 +44,11 @@ func TestEntrypointSIGTERMDrainsActiveRead(t *testing.T) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, "--config", cfg, "serve", "--port", port)
 	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "DINERO_DATABASE_URL=") && !strings.HasPrefix(entry, "DINERO_DATABASE_URL_FILE=") && !strings.HasPrefix(entry, "DINERO_CONFIG_FILE=") && !strings.HasPrefix(entry, "DINERO_API_TOKEN_FILE=") {
+		if !strings.HasPrefix(entry, "DINERO_DATABASE_URL=") && !strings.HasPrefix(entry, "DINERO_DATABASE_URL_FILE=") && !strings.HasPrefix(entry, "DINERO_CONFIG_FILE=") {
 			cmd.Env = append(cmd.Env, entry)
 		}
 	}
-	cmd.Env = append(cmd.Env, "DINERO_CONFIG_FILE="+cfg, "DINERO_DATABASE_URL="+fx.DSN, "DINERO_API_TOKEN_FILE="+token)
+	cmd.Env = append(cmd.Env, "DINERO_CONFIG_FILE="+cfg, "DINERO_DATABASE_URL="+fx.DSN)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +67,6 @@ func TestEntrypointSIGTERMDrainsActiveRead(t *testing.T) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	request := func() (*http.Response, error) {
 		r, _ := http.NewRequestWithContext(ctx, "GET", "http://"+address+"/api/accounts", nil)
-		r.Header.Set("Authorization", "Bearer synthetic-read-token-123456")
 		return client.Do(r)
 	}
 	deadline := time.Now().Add(5 * time.Second)

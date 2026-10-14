@@ -1,13 +1,10 @@
 package httpapi
 
 import (
-	"crypto/subtle"
-	"errors"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -15,30 +12,14 @@ import (
 )
 
 type Options struct {
-	Token          []byte
 	AllowedHosts   []string
 	AllowedOrigins []string
 	MCPHandler     http.Handler
 }
 
-func ReadTokenFile(path string) ([]byte, error) {
-	if path == "" {
-		return nil, errors.New("DINERO_API_TOKEN_FILE is required")
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, errors.New("could not read API token file")
-	}
-	token := []byte(strings.TrimSpace(string(b)))
-	if len(token) < 16 {
-		return nil, errors.New("API token file must contain at least 16 non-whitespace bytes")
-	}
-	return token, nil
-}
-
 var requestSequence atomic.Uint64
 
-// Protect applies the shared authorization and browser-origin policy to REST and MCP.
+// Protect applies the shared Host and browser-origin policy to REST and MCP.
 func Protect(next http.Handler, opts Options) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -57,12 +38,6 @@ func Protect(next http.Handler, opts Options) http.Handler {
 			http.Error(w, "Forbidden", status)
 			return
 		}
-		if len(opts.Token) == 0 || !validBearer(r.Header.Get("Authorization"), opts.Token) {
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			status = http.StatusUnauthorized
-			http.Error(w, "Unauthorized", status)
-			return
-		}
 		rw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rw, r)
 		status = rw.status
@@ -71,7 +46,7 @@ func Protect(next http.Handler, opts Options) http.Handler {
 
 func logPath(path string) string {
 	switch path {
-	case "/api/accounts", "/api/categories", "/api/transactions", "/api/balance", "/api/summary", "/api/status", "/api/openapi", "/api/openapi.json", "/api/openapi.yaml", "/api/openapi-3.0.json", "/api/openapi-3.0.yaml", "/api/docs", "/mcp", "/healthz", "/readyz":
+	case "/", "/api/accounts", "/api/categories", "/api/transactions", "/api/balance", "/api/summary", "/api/status", "/api/openapi", "/api/openapi.json", "/api/openapi.yaml", "/api/openapi-3.0.json", "/api/openapi-3.0.yaml", "/api/docs", "/mcp", "/healthz", "/readyz":
 		return path
 	default:
 		return "<unmatched>"
@@ -92,14 +67,6 @@ func (w *statusWriter) Flush() {
 	}
 }
 
-func validBearer(header string, token []byte) bool {
-	const prefix = "Bearer "
-	if !strings.HasPrefix(header, prefix) {
-		return false
-	}
-	supplied := []byte(strings.TrimPrefix(header, prefix))
-	return subtle.ConstantTimeCompare(supplied, token) == 1
-}
 func allowedHost(value string, allowed []string) bool {
 	host := value
 	if h, _, err := net.SplitHostPort(value); err == nil {

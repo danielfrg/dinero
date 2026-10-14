@@ -27,16 +27,35 @@ type Record struct {
 	Category    string  `json:"category"`
 	Subcategory string  `json:"subcategory"`
 }
+type AccountSummary struct {
+	Account              string
+	TransactionsQueried  int
+	PendingTransactions  int
+	NewTransactions      int
+	ExistingTransactions int
+	Pending              []Record
+	Transactions         []Record
+}
+type FetchProgress struct {
+	Alias               string
+	Start               string
+	Through             string
+	Completed           bool
+	TransactionsQueried int
+	PendingTransactions int
+}
 type Result struct {
-	Status               string   `json:"status"`
-	Start                string   `json:"start"`
-	Through              string   `json:"through"`
-	TransactionsQueried  int      `json:"transactions_queried"`
-	PendingTransactions  int      `json:"pending_transactions"`
-	NewTransactions      int      `json:"new_transactions"`
-	ExistingTransactions int      `json:"existing_transactions"`
-	MissingAccountIDs    []string `json:"missing_account_ids"`
-	Transactions         []Record `json:"transactions"`
+	Status               string           `json:"status"`
+	Start                string           `json:"start"`
+	Through              string           `json:"through"`
+	TransactionsQueried  int              `json:"transactions_queried"`
+	PendingTransactions  int              `json:"pending_transactions"`
+	NewTransactions      int              `json:"new_transactions"`
+	ExistingTransactions int              `json:"existing_transactions"`
+	MissingAccountIDs    []string         `json:"missing_account_ids"`
+	Transactions         []Record         `json:"transactions"`
+	RecordsInTable       int              `json:"-"`
+	Accounts             []AccountSummary `json:"-"`
 	records              []plaid.Transaction
 }
 type Service struct {
@@ -55,6 +74,10 @@ func New(s *store.Store, cfg config.Config, p plaid.Client) *Service {
 }
 
 func (s *Service) Preview(ctx context.Context, days int, through string) (Result, error) {
+	return s.PreviewWithProgress(ctx, days, through, nil)
+}
+
+func (s *Service) PreviewWithProgress(ctx context.Context, days int, through string, progress func(FetchProgress) error) (Result, error) {
 	if days <= 0 {
 		return Result{}, errors.New("days must be positive")
 	}
@@ -79,6 +102,12 @@ func (s *Service) Preview(ctx context.Context, days int, through string) (Result
 		return Result{}, errors.New("Plaid client is required")
 	}
 	for _, alias := range aliases {
+		event := FetchProgress{Alias: alias, Start: start.Format("2006-01-02"), Through: end.Format("2006-01-02")}
+		if progress != nil {
+			if err := progress(event); err != nil {
+				return Result{}, err
+			}
+		}
 		token := s.cfg.Plaid.Tokens[alias]
 		for offset := 0; ; {
 			page, e := s.provider.GetTransactions(ctx, token, start, end, offset)
@@ -94,12 +123,24 @@ func (s *Service) Preview(ctx context.Context, days int, through string) (Result
 				return Result{}, errors.New("Plaid returned inconsistent pagination")
 			}
 			all = append(all, page.Transactions...)
+			event.TransactionsQueried += len(page.Transactions)
+			for _, tr := range page.Transactions {
+				if tr.Pending {
+					event.PendingTransactions++
+				}
+			}
 			offset += len(page.Transactions)
 			if offset >= page.Total {
 				break
 			}
 			if len(page.Transactions) == 0 {
 				return Result{}, errors.New("Plaid pagination stopped before total transactions")
+			}
+		}
+		if progress != nil {
+			event.Completed = true
+			if err := progress(event); err != nil {
+				return Result{}, err
 			}
 		}
 	}
@@ -172,13 +213,10 @@ func (s *Service) classify(start, end time.Time, records []plaid.Transaction, ex
 	if err != nil {
 		return Result{}, err
 	}
-	result := Result{Status: "dry-run", Start: start.Format("2006-01-02"), Through: end.Format("2006-01-02"), TransactionsQueried: len(records), MissingAccountIDs: []string{}, Transactions: []Record{}, records: records}
+	result := Result{Status: "dry-run", Start: start.Format("2006-01-02"), Through: end.Format("2006-01-02"), TransactionsQueried: len(records), RecordsInTable: len(existing), MissingAccountIDs: []string{}, Transactions: []Record{}, Accounts: []AccountSummary{}, records: records}
 	missing := map[string]bool{}
+	accounts := map[string]*AccountSummary{}
 	for _, tr := range records {
-		if tr.Pending {
-			result.PendingTransactions++
-			continue
-		}
 		account := s.cfg.Plaid.AccountIDToName[tr.AccountID]
 		if account == "" {
 			account = tr.AccountID
@@ -187,14 +225,39 @@ func (s *Service) classify(start, end time.Time, records []plaid.Transaction, ex
 				missing[tr.AccountID] = true
 			}
 		}
+		summary := accounts[account]
+		if summary == nil {
+			summary = &AccountSummary{Account: account, Pending: []Record{}, Transactions: []Record{}}
+			accounts[account] = summary
+		}
+		summary.TransactionsQueried++
+		record := Record{Date: tr.Date, Description: tr.Name, Account: account, Amount: tr.Amount}
+		if tr.Pending {
+			result.PendingTransactions++
+			summary.PendingTransactions++
+			summary.Pending = append(summary.Pending, record)
+			continue
+		}
 		k := key{tr.Date, account, tr.Name, tr.Amount}
 		if byKey[k] {
 			result.ExistingTransactions++
+			summary.ExistingTransactions++
 			continue
 		}
 		category := rules[tr.Name]
-		result.Transactions = append(result.Transactions, Record{Date: tr.Date, Description: tr.Name, Account: account, Amount: tr.Amount, Category: category[0], Subcategory: category[1]})
+		record.Category, record.Subcategory = category[0], category[1]
+		result.Transactions = append(result.Transactions, record)
+		summary.Transactions = append(summary.Transactions, record)
 		result.NewTransactions++
+		summary.NewTransactions++
+	}
+	accountNames := make([]string, 0, len(accounts))
+	for account := range accounts {
+		accountNames = append(accountNames, account)
+	}
+	sort.Strings(accountNames)
+	for _, account := range accountNames {
+		result.Accounts = append(result.Accounts, *accounts[account])
 	}
 	sort.Strings(result.MissingAccountIDs)
 	if result.NewTransactions == 0 {

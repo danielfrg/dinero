@@ -9,7 +9,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Options is the same bearer, Host, and Origin policy used by the REST API.
+// Options is the same Host and Origin policy used by the REST API.
 type Options = httpapi.Options
 
 // NewHandler serves stateless Streamable HTTP after the shared HTTP policy.
@@ -22,5 +22,13 @@ func NewHandler(service *ledger.Service, opts Options) http.Handler {
 func NewTransportHandler(service *ledger.Service) http.Handler {
 	s := sdk.NewServer(&sdk.Implementation{Name: "dinero", Version: "0.1.0"}, nil)
 	registerTools(s, service)
-	return sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return s }, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true, DisableLocalhostProtection: true, PropagateRequestCancellation: true})
+	transport := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return s }, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true, DisableLocalhostProtection: true, PropagateRequestCancellation: true})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "Dinero MCP endpoint. Connect with a Streamable HTTP MCP client.", http.StatusMethodNotAllowed)
+			return
+		}
+		transport.ServeHTTP(w, r)
+	})
 }

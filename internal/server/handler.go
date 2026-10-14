@@ -6,8 +6,8 @@ import (
 	"net/http"
 )
 
-// NewHandler composes REST and an optional unprotected MCP transport under
-// one bearer, Host, and Origin policy.
+// NewHandler composes REST and an optional MCP transport under
+// one Host and Origin policy.
 func NewHandler(service *ledger.Service, opts httpapi.Options, mcpHandler http.Handler) http.Handler {
 	opts.MCPHandler = mcpHandler
 	return httpapi.New(service, opts)

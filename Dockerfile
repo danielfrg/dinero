@@ -14,9 +14,13 @@ RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X gith
 
 FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
 COPY --from=build /out/dinero /dinero
+COPY LICENSE.txt /licenses/LICENSE.txt
 ARG VCS_REF
+ARG VERSION=dev
 LABEL org.opencontainers.image.source="https://github.com/danielfrg/dinero" \
-      org.opencontainers.image.revision=$VCS_REF
+      org.opencontainers.image.revision=$VCS_REF \
+      org.opencontainers.image.version=$VERSION \
+      org.opencontainers.image.licenses="Apache-2.0"
 EXPOSE 8080
 USER 65532:65532
 ENTRYPOINT ["/dinero", "serve", "--host", "0.0.0.0", "--port", "8080"]

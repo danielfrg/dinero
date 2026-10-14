@@ -15,13 +15,15 @@ import (
 
 func New(service *ledger.Service, opts Options) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Dinero</title></head><body>Dinero API. REST docs: <a href=\"/api/docs\">/api/docs</a>; MCP: <a href=\"/mcp\">/mcp</a>.</body></html>\n"))
+	})
 	cfg := huma.DefaultConfig("Dinero API", "1.0.0")
 	cfg.OpenAPIPath = "/api/openapi"
 	cfg.DocsPath = "/api/docs"
 	cfg.SchemasPath = ""
 	cfg.CreateHooks = nil
-	cfg.OpenAPI.Components.SecuritySchemes = map[string]*huma.SecurityScheme{"bearer": {Type: "http", Scheme: "bearer"}}
-	cfg.OpenAPI.Security = []map[string][]string{{"bearer": {}}}
 	api := humago.New(mux, cfg)
 	mux.HandleFunc("GET /api/openapi", func(w http.ResponseWriter, r *http.Request) {
 		copy := r.Clone(r.Context())

@@ -60,7 +60,7 @@ func newInitDBCommand(deps Dependencies, configPath *string) *cobra.Command {
 	var yes, jsonOutput, dryRun bool
 	cmd := &cobra.Command{Use: "init-db", Short: "Create the legacy transactions table if absent", RunE: func(cmd *cobra.Command, _ []string) error {
 		if dryRun {
-			return emit(cmd, jsonOutput, map[string]string{"status": "dry-run"}, "Database initialization preview; no changes")
+			return emitDryRun(cmd, jsonOutput, map[string]string{"status": "dry-run"}, "Database initialization preview")
 		}
 		if err := confirm(cmd, "Create transactions table?", yes, jsonOutput); err != nil {
 			return err
@@ -112,7 +112,7 @@ func newRulesCommand(deps Dependencies, configPath *string) *cobra.Command {
 			message += fmt.Sprintf("%s  %s  %s  %d\n", r.Description, r.Category, r.Subcategory, r.Amount)
 		}
 		if (!commit && !yesEnvironment()) || dryRun {
-			return emit(cmd, jsonOutput, rules, message+"Dry run")
+			return emitDryRun(cmd, jsonOutput, rules, message)
 		}
 		if err := confirm(cmd, "Save category rules?", yes, jsonOutput); err != nil {
 			return err
@@ -188,7 +188,13 @@ func newTransactionsCommand(deps Dependencies, configPath *string) *cobra.Comman
 		if err != nil {
 			return err
 		}
-		preview, err := ingest.New(reader, cfg, provider).Preview(cmd.Context(), days, through)
+		var progress func(ingest.FetchProgress) error
+		if !jsonOutput {
+			progress = func(event ingest.FetchProgress) error {
+				return printTransactionsProgress(cmd.ErrOrStderr(), event)
+			}
+		}
+		preview, err := ingest.New(reader, cfg, provider).PreviewWithProgress(cmd.Context(), days, through, progress)
 		reader.Close()
 		if err != nil {
 			return err
@@ -196,8 +202,16 @@ func newTransactionsCommand(deps Dependencies, configPath *string) *cobra.Comman
 		for _, id := range preview.MissingAccountIDs {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Plaid account ID %s has no mapping; add it under [plaid.account_id_to_name]. Using the ID as the account name.\n", id)
 		}
-		if (!commit && !yes && !yesEnvironment()) || dryRun || preview.NewTransactions == 0 {
-			return emit(cmd, jsonOutput, preview, fmt.Sprintf("%d new, %d existing, %d pending; dry run", preview.NewTransactions, preview.ExistingTransactions, preview.PendingTransactions))
+		if !jsonOutput {
+			if err := printTransactionsPreview(cmd.OutOrStdout(), preview); err != nil {
+				return err
+			}
+		}
+		if (!commit && !yes && !yesEnvironment()) || dryRun {
+			return emitDryRun(cmd, jsonOutput, preview, fmt.Sprintf("%d new, %d existing, %d pending", preview.NewTransactions, preview.ExistingTransactions, preview.PendingTransactions))
+		}
+		if preview.NewTransactions == 0 {
+			return emit(cmd, jsonOutput, preview, "No new transactions to insert.")
 		}
 		if err := confirm(cmd, "Insert new transactions?", yes, jsonOutput); err != nil {
 			return err

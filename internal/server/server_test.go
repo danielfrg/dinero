@@ -95,19 +95,18 @@ func TestServeReturnsListenerError(t *testing.T) {
 }
 
 func TestComposedMCPHandlerUsesSharedPolicy(t *testing.T) {
-	h := server.NewHandler(nil, httpapi.Options{Token: []byte("separate-read-token")}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	h := server.NewHandler(nil, httpapi.Options{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
 		r := httptest.NewRequest(method, "/mcp", nil)
 		r.Host = "localhost"
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
-		if w.Code != 401 {
+		if w.Code != 204 {
 			t.Fatalf("%s unauthenticated: %d", method, w.Code)
 		}
 	}
 	r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
 	r.Host = "localhost"
-	r.Header.Set("Authorization", "Bearer separate-read-token")
 	r.Header.Set("Origin", "https://attacker.example")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -118,6 +117,6 @@ func TestComposedMCPHandlerUsesSharedPolicy(t *testing.T) {
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	if w.Code != 204 {
-		t.Fatalf("authorized MCP: %d", w.Code)
+		t.Fatalf("MCP without credentials: %d", w.Code)
 	}
 }

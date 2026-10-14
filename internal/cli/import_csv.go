@@ -60,10 +60,21 @@ func newImportCSVCommand(deps Dependencies, configPath *string) *cobra.Command {
 			if err = writeImportResult(cmd.OutOrStdout(), preview, jsonOutput); err != nil {
 				return err
 			}
+			if !commit && !jsonOutput {
+				if err = writeDryRunFooter(cmd.OutOrStdout()); err != nil {
+					return err
+				}
+			}
 			return &commandExit{code: 1, silent: true}
 		}
 		if preview.Status == "no-transactions" || preview.Status == "no-new-transactions" || !commit {
-			return writeImportResult(cmd.OutOrStdout(), preview, jsonOutput)
+			if err = writeImportResult(cmd.OutOrStdout(), preview, jsonOutput); err != nil {
+				return err
+			}
+			if !commit && !jsonOutput {
+				return writeDryRunFooter(cmd.OutOrStdout())
+			}
+			return nil
 		}
 		if jsonOutput && !yes {
 			return &commandExit{code: 2, message: "--json --commit requires --yes"}
