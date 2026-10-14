@@ -161,4 +161,7 @@ cython_debug/
 
 # Project specific
 config.toml
+!testdata/compat/config.toml
 /data
+/bin/
+.config.toml-recovery-*
