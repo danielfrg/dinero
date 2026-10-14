@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -26,6 +27,12 @@ func (cliFakePlaid) GetTransactions(_ context.Context, _ string, _, _ time.Time,
 		return plaid.TransactionsPage{}, nil
 	}
 	return plaid.TransactionsPage{Total: 1, Transactions: []plaid.Transaction{{AccountID: "missing-map", Date: "2026-10-14", Name: "Coffee", Amount: 4.25}}}, nil
+}
+
+type cliFailPlaid struct{}
+
+func (cliFailPlaid) GetTransactions(context.Context, string, time.Time, time.Time, int) (plaid.TransactionsPage, error) {
+	return plaid.TransactionsPage{}, errors.New("sentinel-secret-token")
 }
 
 func TestMaintenanceJSONAndConfirmation(t *testing.T) {
@@ -135,6 +142,29 @@ func TestTransactionsJSONAndLegacyYes(t *testing.T) {
 	fx.DB.QueryRow("SELECT COUNT(*) FROM transactions").Scan(&n)
 	if n != 1 {
 		t.Fatal(n)
+	}
+}
+
+func TestTransactionsProviderErrorDoesNotLeakSecret(t *testing.T) {
+	fx := testutil.NewSQLite(t)
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.toml")
+	body := "timezone = \"UTC\"\n[database]\nconnection_string = \"sqlite:///" + fx.DSN + "\"\n[plaid.tokens]\nbank = \"synthetic\"\n"
+	if err := os.WriteFile(cfg, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DINERO_CONFIG_FILE", cfg)
+	t.Setenv("DINERO_STATE_DIR", t.TempDir())
+	t.Setenv("DINERO_DATABASE_URL", "")
+	os.Unsetenv("DINERO_DATABASE_URL")
+	var out, stderr bytes.Buffer
+	root := cli.NewRoot(cli.Dependencies{PlaidClient: cliFailPlaid{}})
+	root.SetArgs([]string{"transactions", "--through", "2026-10-14", "--json"})
+	root.SetOut(&out)
+	root.SetErr(&stderr)
+	err := root.ExecuteContext(context.Background())
+	if err == nil || strings.Contains(err.Error()+stderr.String()+out.String(), "sentinel-secret-token") {
+		t.Fatalf("provider secret leaked: %v %q %q", err, out.String(), stderr.String())
 	}
 }
 

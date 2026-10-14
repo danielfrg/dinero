@@ -22,6 +22,15 @@ type TransactionsPage struct {
 type Client interface {
 	GetTransactions(context.Context, string, time.Time, time.Time, int) (TransactionsPage, error)
 }
+
+type ErrLoginRequired struct{}
+
+func (*ErrLoginRequired) Error() string { return "Plaid login requires an update" }
+
+type ErrProvider struct{}
+
+func (*ErrProvider) Error() string { return "Plaid transactions/get failed" }
+
 type SDKClient struct{ api *sdk.APIClient }
 
 func New(clientID, secret, environment string) (*SDKClient, error) {
@@ -55,7 +64,10 @@ func (c *SDKClient) GetTransactions(ctx context.Context, token string, start, en
 	req.SetOptions(*opts)
 	resp, _, err := c.api.PlaidApi.TransactionsGet(ctx).TransactionsGetRequest(*req).Execute()
 	if err != nil {
-		return TransactionsPage{}, fmt.Errorf("Plaid transactions/get failed: %w", err)
+		if apiError, decodeErr := sdk.ToPlaidError(err); decodeErr == nil && apiError.GetErrorCode() == "ITEM_LOGIN_REQUIRED" {
+			return TransactionsPage{}, &ErrLoginRequired{}
+		}
+		return TransactionsPage{}, &ErrProvider{}
 	}
 	result := TransactionsPage{Total: int(resp.GetTotalTransactions()), Transactions: make([]Transaction, 0, len(resp.GetTransactions()))}
 	for _, item := range resp.GetTransactions() {

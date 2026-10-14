@@ -3,8 +3,10 @@ package plaid
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,5 +53,31 @@ func TestSDKTransactionsGetTranslation(t *testing.T) {
 func TestRejectDevelopmentEnvironment(t *testing.T) {
 	if _, err := New("synthetic-id", "synthetic-secret", "development"); err == nil {
 		t.Fatal("development must be rejected")
+	}
+}
+
+func TestSDKLoginErrorIsTypedAndSanitized(t *testing.T) {
+	for _, code := range []string{"ITEM_LOGIN_REQUIRED", "INVALID_ACCESS_TOKEN"} {
+		t.Run(code, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error_type":"ITEM_ERROR","error_code":"` + code + `","error_message":"sentinel-secret-token","display_message":null}`))
+			}))
+			defer server.Close()
+			cfg := sdk.NewConfiguration()
+			cfg.UseEnvironment(sdk.Environment(server.URL))
+			c := &SDKClient{api: sdk.NewAPIClient(cfg)}
+			start, _ := time.Parse("2006-01-02", "2026-07-16")
+			end, _ := time.Parse("2006-01-02", "2026-10-14")
+			_, err := c.GetTransactions(context.Background(), "synthetic", start, end, 0)
+			if err == nil || strings.Contains(err.Error(), "sentinel-secret-token") {
+				t.Fatalf("unsafe error %v", err)
+			}
+			var login *ErrLoginRequired
+			if errors.As(err, &login) != (code == "ITEM_LOGIN_REQUIRED") {
+				t.Fatalf("typed login error %v", err)
+			}
+		})
 	}
 }

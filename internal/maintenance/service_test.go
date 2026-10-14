@@ -48,6 +48,18 @@ func TestRulesCacheExport(t *testing.T) {
 		if err := json.Unmarshal(raw, &accounts); err != nil || len(accounts) != 1 || accounts[0] != "Checking" {
 			t.Fatalf("accounts %s %v", raw, err)
 		}
+		categoriesRaw, err := os.ReadFile(filepath.Join(state, "cache", "categories.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var categories struct {
+			Categories    []string                                 `json:"categories"`
+			Subcategories []string                                 `json:"subcategories"`
+			Pairs         []struct{ Category, Subcategory string } `json:"category_subcategory_pairs"`
+		}
+		if err := json.Unmarshal(categoriesRaw, &categories); err != nil || len(categories.Categories) != 2 || len(categories.Subcategories) != 2 || len(categories.Pairs) != 2 {
+			t.Fatalf("category cache %s %v", categoriesRaw, err)
+		}
 		dir := t.TempDir()
 		if err := svc.Export(context.Background(), dir); err != nil {
 			t.Fatal(err)
@@ -60,6 +72,13 @@ func TestRulesCacheExport(t *testing.T) {
 		var n int
 		if err := exported.QueryRow("SELECT count(*) FROM transactions").Scan(&n); err != nil || n != 4 {
 			t.Fatalf("export rows %d %v", n, err)
+		}
+		csvText, err := os.ReadFile(filepath.Join(dir, "all.csv"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(string(csvText), "id,date,description,category,subcategory,amount,notes,account\n") {
+			t.Fatalf("CSV columns %s", csvText)
 		}
 	}
 }
@@ -110,6 +129,9 @@ func TestExportPreservesNullsAndRawUTC(t *testing.T) {
 		}
 		if !strings.Contains(string(csv), "2026-09-01 05:00:00") || strings.Contains(string(csv), "2026-09-01 00:00:00") {
 			t.Fatalf("timezone changed: %s", csv)
+		}
+		if strings.HasPrefix(fx.DSN, "postgres") && !strings.Contains(string(csv), "2026-09-01 05:00:00+00:00") {
+			t.Fatalf("PostgreSQL CSV offset lost: %s", csv)
 		}
 		db, err := sql.Open("sqlite", filepath.Join(dir, "transactions.db"))
 		if err != nil {

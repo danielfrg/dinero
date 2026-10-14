@@ -112,7 +112,7 @@ func TestChangedLoginNamesAliasWithoutWriting(t *testing.T) {
 	p := &fakeProvider{failOffset: 0, failErr: errors.New("the login details of this item have changed")}
 	cfg := config.Config{Timezone: "UTC", Plaid: config.Plaid{Tokens: map[string]string{"bank": "synthetic"}}}
 	_, err = ingest.New(s, cfg, p).Preview(context.Background(), 90, "2026-10-14")
-	if err == nil || !strings.Contains(err.Error(), "Credentials expired for account: bank") {
+	if err == nil || !strings.Contains(err.Error(), "Credentials expired for account: bank") || !strings.Contains(err.Error(),"dinero link --update bank") {
 		t.Fatalf("changed-login error %v", err)
 	}
 }

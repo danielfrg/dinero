@@ -82,11 +82,12 @@ func (s *Service) Preview(ctx context.Context, days int, through string) (Result
 		for offset := 0; ; {
 			page, e := s.provider.GetTransactions(ctx, token, start, end, offset)
 			if e != nil {
+				var loginRequired *plaid.ErrLoginRequired
 				lower := strings.ToLower(e.Error())
-				if strings.Contains(lower, "the login details of this item have changed") || strings.Contains(lower, "item_login_required") {
-					return Result{}, fmt.Errorf("Credentials expired for account: %s", alias)
+				if errors.As(e, &loginRequired) || strings.Contains(lower, "the login details of this item have changed") || strings.Contains(lower, "item_login_required") {
+					return Result{}, fmt.Errorf("Credentials expired for account: %s; run dinero link --update %s", alias, alias)
 				}
-				return Result{}, fmt.Errorf("fetch transactions for %s: %w", alias, e)
+				return Result{}, fmt.Errorf("Plaid transaction fetch failed for account %s", alias)
 			}
 			if page.Total < 0 || page.Total < offset+len(page.Transactions) {
 				return Result{}, errors.New("Plaid returned inconsistent pagination")
