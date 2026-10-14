@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/danielfrg/dinero/internal/ledger"
 	"github.com/danielfrg/dinero/internal/testutil"
@@ -50,5 +51,47 @@ func TestPostgresYearAndMonthUseConfiguredTimezone(t *testing.T) {
 	page, err = s.Search(context.Background(), ledger.Query{Year: &year, Month: &month, Limit: 50, Sort: "date"})
 	if err != nil || len(page.Transactions) != 1 || page.Transactions[0].Description != "local 2027" {
 		t.Fatalf("year/month %+v %v", page, err)
+	}
+}
+
+func TestPostgresCentralTimezoneCalendarRules(t *testing.T) {
+	fx := testutil.NewPostgres(t)
+	cases := []struct {
+		utc, local, monthKey string
+		year, month          int
+	}{
+		{"2026-01-01T05:59:59Z", "2025-12-31T23:59:59-06:00", "2025-12", 2025, 12},
+		{"2026-01-01T06:00:00Z", "2026-01-01T00:00:00-06:00", "2026-01", 2026, 1},
+		{"2026-07-01T04:59:59Z", "2026-06-30T23:59:59-05:00", "2026-06", 2026, 6},
+		{"2026-07-01T05:00:00Z", "2026-07-01T00:00:00-05:00", "2026-07", 2026, 7},
+	}
+	for _, tc := range cases {
+		fx.Insert(t, tc.utc, tc.local, 1, "Checking")
+	}
+	for _, timezone := range []string{"US/Central", "America/Chicago"} {
+		t.Run(timezone, func(t *testing.T) {
+			s := fx.Open(t, timezone)
+			for _, tc := range cases {
+				t.Run(tc.monthKey, func(t *testing.T) {
+					page, err := s.Search(context.Background(), ledger.Query{Year: &tc.year, Month: &tc.month, Limit: 50})
+					if err != nil || len(page.Transactions) != 1 {
+						t.Fatalf("year/month %+v %v", page, err)
+					}
+					date := page.Transactions[0].Date
+					if date == nil || date.Format(time.RFC3339) != tc.local {
+						t.Fatalf("date %v, want %s", date, tc.local)
+					}
+				})
+			}
+			summary, err := s.Summary(context.Background(), ledger.SummaryQuery{GroupBy: "month"})
+			if err != nil || len(summary.Groups) != len(cases) {
+				t.Fatalf("monthly summary %+v %v", summary, err)
+			}
+			for i, group := range summary.Groups {
+				if group.Key != cases[i].monthKey || group.Count != 1 || group.SignedTotal != "1" {
+					t.Fatalf("monthly group %+v, want month %s with one transaction totaling 1", group, cases[i].monthKey)
+				}
+			}
+		})
 	}
 }

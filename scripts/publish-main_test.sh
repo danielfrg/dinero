@@ -167,6 +167,12 @@ case "${1:-}" in
                     shift
                 done
                 ;;
+            download)
+                [ "$#" = 4 ] && [ "$1" = --pattern ] && [ "$2" = SHA256SUMS ] && [ "$3" = --dir ] || fail 'unexpected download'
+                log read:checksums
+                read_failure checksums
+                cp "$FAKE_STATE/assets/SHA256SUMS" "$4/SHA256SUMS"
+                ;;
             view)
                 [ "$#" = 4 ] && [ "$1" = --json ] && [ "$2" = assets ] && [ "$3" = --jq ] || fail 'unexpected view'
                 log read:assets
@@ -241,10 +247,17 @@ existing_release() {
     printf false > "$FAKE_STATE/immutable"
     printf '%s\n' "$old_commit" > "$FAKE_STATE/tag_sha"
     printf '%s\n' "$old_version" > "$FAKE_STATE/assets/VERSION"
-    printf 'old checksum file\n' > "$FAKE_STATE/assets/SHA256SUMS"
+    : > "$FAKE_STATE/assets/SHA256SUMS"
     for os in darwin linux; do
         for arch in amd64 arm64; do
-            printf 'old archive\n' > "$FAKE_STATE/assets/dinero_${old_version#v}_${os}_${arch}.tar.gz"
+            name="dinero_${old_version#v}_${os}_${arch}.tar.gz"
+            printf 'old archive\n' > "$FAKE_STATE/assets/$name"
+            if command -v sha256sum >/dev/null 2>&1; then
+                hash=$(sha256sum "$FAKE_STATE/assets/$name")
+            else
+                hash=$(shasum -a 256 "$FAKE_STATE/assets/$name")
+            fi
+            printf '%s  %s\n' "${hash%% *}" "$name" >> "$FAKE_STATE/assets/SHA256SUMS"
         done
     done
 }
@@ -270,7 +283,14 @@ assert_published() {
             [ ! -f "$FAKE_STATE/assets/dinero_${old_version#v}_${os}_${arch}.tar.gz" ] || fail 'obsolete rolling archive retained'
         done
     done
-    cmp "$asset_dir/SHA256SUMS" "$FAKE_STATE/assets/SHA256SUMS" || fail 'wrong checksums'
+    for os in darwin linux; do
+        for arch in amd64 arm64; do
+            name="dinero_${FAKE_VERSION#v}_${os}_${arch}.tar.gz"
+            (source "$repo_dir/scripts/install.sh"; dinero_verify_checksum \
+                "$FAKE_STATE/assets/$name" "$FAKE_STATE/assets/SHA256SUMS" "$name") \
+                >> "$case_dir/output" 2>&1 || fail 'published archive checksum invalid'
+        done
+    done
     cmp "$asset_dir/install.sh" "$FAKE_STATE/assets/install.sh" || fail 'wrong installer'
     [ "$(cat "$FAKE_STATE/stable_tag")" = "$old_commit" ] || fail 'stable tag moved'
     [ "$(cat "$FAKE_STATE/stable_asset")" = 'stable archive' ] || fail 'stable asset changed'
@@ -371,6 +391,13 @@ for failed_read in head releases; do
     pass
 done
 
+new_case failed_read_checksums
+existing_release
+export FAKE_READ_FAILURE=checksums
+expect_failure
+assert_no_mutations
+pass
+
 for failed_upload in "dinero_${FAKE_VERSION#v}_linux_arm64.tar.gz" SHA256SUMS install.sh VERSION; do
     new_case "failed_upload_$passed"
     existing_release
@@ -380,6 +407,16 @@ for failed_upload in "dinero_${FAKE_VERSION#v}_linux_arm64.tar.gz" SHA256SUMS in
     [ "$(cat "$FAKE_STATE/tag_sha")" = "$old_commit" ] || fail 'failed upload advanced tag'
     if awk '/^write:delete:/ || /^write:edit$/ {found=1} END {exit !found}' "$FAKE_STATE/actions"; then fail 'failure published or cleaned old archives'; fi
     [ -f "$FAKE_STATE/assets/dinero_${old_version#v}_linux_arm64.tar.gz" ] || fail 'failure removed prior archives'
+    # With the asset retained on this simulated failure, the prior VERSION
+    # must remain verifiable using the shipped installer's checksum helper.
+    for os in darwin linux; do
+        for arch in amd64 arm64; do
+            name="dinero_${old_version#v}_${os}_${arch}.tar.gz"
+            (source "$repo_dir/scripts/install.sh"; dinero_verify_checksum \
+                "$FAKE_STATE/assets/$name" "$FAKE_STATE/assets/SHA256SUMS" "$name") \
+                >> "$case_dir/output" 2>&1 || fail 'prior version is no longer installable after interrupted upload'
+        done
+    done
     pass
 done
 

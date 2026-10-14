@@ -81,10 +81,25 @@ else
         --title "$title" --notes "$notes"
 fi
 
+checksum_dir=$(mktemp -d "${TMPDIR:-/tmp}/dinero-publish.XXXXXX")
+trap 'rm -rf "$checksum_dir"' EXIT
+: > "$checksum_dir/previous"
+if [ -n "$release_info" ] && [ "$draft" = false ]; then
+    # Preserve prior hashes if a later upload fails before VERSION advances.
+    # Shared asset replacement with gh --clobber is still not atomic.
+    gh release download "$tag" --pattern SHA256SUMS --dir "$checksum_dir"
+    mv "$checksum_dir/SHA256SUMS" "$checksum_dir/previous"
+fi
+cat "$checksum_dir/previous" "$asset_dir/SHA256SUMS" | awk '
+    NF != 2 || length($1) != 64 || $1 !~ /^[0-9a-f]+$/ {exit 1}
+    {hash[$2]=$1}
+    END {for (asset in hash) printf "%s  %s\n", hash[asset], asset}
+' | LC_ALL=C sort -k2 > "$checksum_dir/SHA256SUMS"
+
 # Commit-named archives are ready before any shared metadata points at them.
-# Leaving VERSION until the last upload makes partial upload failures recoverable.
+# Advance VERSION only after the archives and shared metadata are uploaded.
 gh release upload "$tag" "${archive_paths[@]}" --clobber
-gh release upload "$tag" "$asset_dir/SHA256SUMS" "$asset_dir/install.sh" --clobber
+gh release upload "$tag" "$checksum_dir/SHA256SUMS" "$asset_dir/install.sh" --clobber
 gh release upload "$tag" "$asset_dir/VERSION" --clobber
 
 # Draft releases may not yet have created their Git tag. Query matching refs

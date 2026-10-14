@@ -21,6 +21,11 @@ type Store struct {
 }
 
 func Open(ctx context.Context, dsn string, readOnly bool, timezone string) (*Store, error) {
+	// Keep the legacy default compatible with PostgreSQL installations whose
+	// timezone data omits IANA backward aliases.
+	if timezone == "US/Central" {
+		timezone = "America/Chicago"
+	}
 	loc, err := time.LoadLocation(timezone)
 	if err != nil {
 		return nil, &ledger.ErrInvalidInput{Field: "timezone", Reason: "unknown timezone"}
