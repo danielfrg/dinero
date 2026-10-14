@@ -30,8 +30,77 @@ Run bank ingestion as a separate, scheduled `dinero transactions --yes` job with
 
 1. Pause the Python writer and verify it has exited. Record its schedule and image/version.
 2. Back up the PostgreSQL database and the complete config/secret files using the existing encrypted backup procedure. Confirm a disposable restore can be read by both Python and Go, including Budget's direct SQL queries against `public.transactions`. The eight legacy columns stay unchanged.
-3. Against that restored copy, compare `search`, `balance`, `build-cache`, `mkrules`, `mkdataset`, and CSV import previews with `testdata/compat/check.py` and the PostgreSQL contract suite. Use only synthetic data for automated tests; production comparisons should be read-only and reviewable.
+3. Point a separate, sanitized config at the disposable restore with read-only database credentials. Run the Python and Go `search` and `balance` commands below against that same copy, then compare parsed JSON. Select representative accounts and date windows, including boundary dates and nullable rows. Run `testdata/compat/check.py` and the PostgreSQL contract suite separately as synthetic preflight checks; they create their own fixtures and never compare the restored ledger.
 4. Start the Go image with the read token and intended DB config. Verify `/readyz`, an authorized REST read, and MCP initialize/list/call through the official SDK. Preview Go ingestion, then explicitly switch the scheduled writer to `transactions --yes` after review.
 5. If rollback is needed, pause the Go writer first, restore the backed-up DB/config if a write must be undone, then start the Python writer. Never have both writers active. Keep the previous image and schedule available until the cutover is accepted.
+
+Run this comparison from the repository checkout after building `bin/dinero-go`. Prepare a private config file containing the restored copy's read-only database URL, the original timezone, and empty Plaid credentials/tokens. Python still requires the legacy Plaid section structure, even for read commands. For example, use the following shape with the actual restored-copy URL in the private file:
+
+```toml
+timezone = "US/Central"
+[plaid]
+client_id = ""
+secret = ""
+env = "development"
+products = "transactions"
+[plaid.tokens]
+[plaid.account_id_to_name]
+[database]
+connection_string = "postgresql+psycopg://restore_reader:password@restore-host:5432/restore_db"
+```
+
+Keep the restored database isolated from the live writer. Set the account and dates to values present in that copy; repeat for several windows. The temporary directory holds transaction output, so remove it through the normal secure cleanup procedure when the review is complete.
+
+```zsh
+umask 077
+cutover_config=/path/to/disposable-restore-readonly-config.toml
+cutover_work=$(mktemp -d)
+mkdir -p "$cutover_work/xdg"
+cutover_account='Test Account'
+cutover_after=2026-09-01
+cutover_before=2026-09-03
+cutover_through=2026-09-03
+
+env -u DINERO_DATABASE_URL -u DINERO_DATABASE_URL_FILE -u DINERO_API_TOKEN_FILE \
+  DINERO_CONFIG_FILE="$cutover_config" XDG_CONFIG_HOME="$cutover_work/xdg" \
+  uv run --offline python -m dinero.cli.main search --account "$cutover_account" \
+  --after "$cutover_after" --before "$cutover_before" --sort date --asc \
+  --limit 500 --json > "$cutover_work/python-search.json"
+env -u DINERO_DATABASE_URL -u DINERO_DATABASE_URL_FILE -u DINERO_API_TOKEN_FILE \
+  DINERO_CONFIG_FILE="$cutover_config" XDG_CONFIG_HOME="$cutover_work/xdg" \
+  DINERO_STATE_DIR="$cutover_work/xdg/dinero" \
+  ./bin/dinero-go search --account "$cutover_account" \
+  --after "$cutover_after" --before "$cutover_before" --sort date --asc \
+  --limit 500 --json > "$cutover_work/go-search.json"
+
+env -u DINERO_DATABASE_URL -u DINERO_DATABASE_URL_FILE -u DINERO_API_TOKEN_FILE \
+  DINERO_CONFIG_FILE="$cutover_config" XDG_CONFIG_HOME="$cutover_work/xdg" \
+  uv run --offline python -m dinero.cli.main balance --account "$cutover_account" \
+  --through "$cutover_through" --json > "$cutover_work/python-balance.json"
+env -u DINERO_DATABASE_URL -u DINERO_DATABASE_URL_FILE -u DINERO_API_TOKEN_FILE \
+  DINERO_CONFIG_FILE="$cutover_config" XDG_CONFIG_HOME="$cutover_work/xdg" \
+  DINERO_STATE_DIR="$cutover_work/xdg/dinero" \
+  ./bin/dinero-go balance --account "$cutover_account" \
+  --through "$cutover_through" --json > "$cutover_work/go-balance.json"
+
+python3 - "$cutover_work" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+def read(name):
+    return json.loads((root / name).read_text())
+
+# Python has no deterministic tie-break for equal date values; compare rows by ID.
+assert sorted(read('python-search.json'), key=lambda row: row['id']) == sorted(
+    read('go-search.json'), key=lambda row: row['id']
+), 'search results differ'
+assert read('python-balance.json') == read('go-balance.json'), 'balances differ'
+print('Restored-copy search and balance JSON match')
+PY
+```
+
+The CLI search limit is 500 rows. Narrow each window until neither result is truncated; repeat across accounts and dates as needed. A mismatch requires review before switching the writer. These commands only read the restored database and write comparison files under `cutover_work`.
 
 `mkdataset` generates both outputs completely before replacing the destination files, but the two filenames cannot be committed in one filesystem rename. If replacement fails between renames, rerun `mkdataset` to regenerate the pair. The source database is unchanged. PyPI package publication remains a separate legacy workflow; the Go release workflow only uploads build artifacts and does not deploy or publish an image.
