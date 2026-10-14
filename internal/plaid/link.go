@@ -80,7 +80,7 @@ type LinkOptions struct {
 	Provider                    LinkProvider
 	Store                       LinkStore
 	Clock                       LinkClock
-	OpenBrowser                 func(string) error
+	OpenBrowser                 func(context.Context, string) error
 	ShowURL                     func(string) error
 	NameAccounts                func([]LinkedAccount, map[string]string) (map[string]string, error)
 }
@@ -234,17 +234,20 @@ func safeHostedURL(value string, secrets ...string) bool {
 }
 
 // OpenBrowser executes a platform opener with an argument vector, never a shell.
-func OpenBrowser(value string) error {
+func OpenBrowser(ctx context.Context, value string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", value)
+		cmd = exec.CommandContext(ctx, "open", value)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", value)
+		cmd = exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", value)
 	default:
-		cmd = exec.Command("xdg-open", value)
+		cmd = exec.CommandContext(ctx, "xdg-open", value)
 	}
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return errors.New("browser could not be opened")
 	}
 	return nil
@@ -318,7 +321,10 @@ func RunLink(ctx context.Context, opts LinkOptions) (SafeLinkResult, error) {
 	}
 	show := opts.NoBrowser
 	if !show {
-		show = opts.OpenBrowser(session.URL) != nil
+		show = opts.OpenBrowser(ctx, session.URL) != nil
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
 	}
 	if show && opts.ShowURL != nil {
 		if err := opts.ShowURL(session.URL); err != nil {

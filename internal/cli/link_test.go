@@ -87,7 +87,7 @@ func TestLinkCLIFlagsFallbackAndProviderOutputRedaction(t *testing.T) {
 			provider := &cliLinkProvider{}
 			clock := &cliClock{}
 			browserCalls := 0
-			root := NewRoot(Dependencies{LinkProvider: provider, LinkClock: clock, OpenBrowser: func(string) error { browserCalls++; return errors.New("sentinel-link-private") }})
+			root := NewRoot(Dependencies{LinkProvider: provider, LinkClock: clock, OpenBrowser: func(context.Context, string) error { browserCalls++; return errors.New("sentinel-link-private") }})
 			args := []string{"--config", p, "link", "new"}
 			switch kind {
 			case "no-browser":

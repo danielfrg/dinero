@@ -35,6 +35,12 @@ func PreflightWritable(path string) error {
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0222 == 0 {
 		return errors.New("configuration file is read-only")
 	}
+	// Effective-ID access checks include a read-only mount even when the file's
+	// mode permits writes and its parent is on a separate writable filesystem.
+	// Checking access does not open, write, or replace mounted secret contents.
+	if err := unix.Faccessat(unix.AT_FDCWD, path, unix.W_OK, unix.AT_EACCESS); err != nil {
+		return errors.New("configuration file is not writable")
+	}
 	parent, err := os.Stat(filepath.Dir(path))
 	if err != nil {
 		return err
@@ -42,7 +48,7 @@ func PreflightWritable(path string) error {
 	if !parent.IsDir() || parent.Mode().Perm()&0222 == 0 {
 		return errors.New("configuration directory is read-only")
 	}
-	if err := unix.Access(filepath.Dir(path), unix.W_OK); err != nil {
+	if err := unix.Faccessat(unix.AT_FDCWD, filepath.Dir(path), unix.W_OK, unix.AT_EACCESS); err != nil {
 		return errors.New("configuration directory is not writable")
 	}
 	return nil

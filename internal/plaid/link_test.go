@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -198,7 +200,7 @@ func TestRunLinkTimeoutBackoffAndBrowserFallback(t *testing.T) {
 	c := &fakeClock{}
 	o.Clock = c
 	o.NoBrowser = false
-	o.OpenBrowser = func(string) error { return errors.New(accessSentinel) }
+	o.OpenBrowser = func(context.Context, string) error { return errors.New(accessSentinel) }
 	var url string
 	o.ShowURL = func(s string) error { url = s; return nil }
 	_, e := RunLink(context.Background(), o)
@@ -614,5 +616,136 @@ func TestRunLinkDefaultDeadlineIsTenMinutes(t *testing.T) {
 		if d > 10*time.Second {
 			t.Fatal("poll interval exceeds maximum")
 		}
+	}
+}
+
+func TestBlockedBrowserHonorsWorkflowCancellationAndReleasesLock(t *testing.T) {
+	for _, kind := range []string{"cancel", "timeout"} {
+		t.Run(kind, func(t *testing.T) {
+			p := linkFixture(t)
+			f := successfulLink()
+			o := options(t, p, f)
+			o.NoBrowser = false
+			o.Clock = nil
+			o.Timeout = 100 * time.Millisecond
+			started := make(chan struct{})
+			o.OpenBrowser = func(ctx context.Context, _ string) error { close(started); <-ctx.Done(); return ctx.Err() }
+			showed := false
+			o.ShowURL = func(string) error { showed = true; return nil }
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { _, e := RunLink(ctx, o); done <- e }()
+			select {
+			case <-started:
+			case <-time.After(2 * time.Second):
+				t.Fatal("browser did not start")
+			}
+			want := context.DeadlineExceeded
+			if kind == "cancel" {
+				cancel()
+				want = context.Canceled
+			}
+			select {
+			case e := <-done:
+				if !errors.Is(e, want) {
+					t.Fatalf("blocked opener error: %v", e)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("blocked opener outlived workflow context")
+			}
+			if f.polls != 0 || f.exchanges != 0 || showed {
+				t.Fatal("cancelled browser continued workflow")
+			}
+			lockCtx, lockCancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer lockCancel()
+			unlock, e := config.Lock(lockCtx, p)
+			if e != nil {
+				t.Fatalf("browser cancellation retained lock: %v", e)
+			}
+			unlock()
+		})
+	}
+}
+
+func TestDefaultBrowserProcessHonorsContext(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix test opener fixture")
+	}
+	name := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		name = "open"
+	}
+	dir := t.TempDir()
+	if e := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nprintf '%s' \"$$\" > \"$DINERO_TEST_BROWSER_PID\"\nexec sleep 60\n"), 0700); e != nil {
+		t.Fatal(e)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, kind := range []string{"cancel", "timeout"} {
+		t.Run(kind, func(t *testing.T) {
+			pidPath := filepath.Join(t.TempDir(), "browser.pid")
+			t.Setenv("DINERO_TEST_BROWSER_PID", pidPath)
+			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- OpenBrowser(ctx, "https://secure.plaid.com/hosted/session") }()
+			// Observe that the helper really started and is blocked; cleanup also
+			// kills it if this regression ever restores a context-free command.
+			deadline := time.Now().Add(2 * time.Second)
+			for {
+				data, e := os.ReadFile(pidPath)
+				if e == nil {
+					pid, e := strconv.Atoi(string(data))
+					if e == nil {
+						process, e := os.FindProcess(pid)
+						if e != nil {
+							t.Fatal(e)
+						}
+						t.Cleanup(func() { _ = process.Kill() })
+						break
+					}
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("test opener did not start")
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			want := context.DeadlineExceeded
+			if kind == "cancel" {
+				cancel()
+				want = context.Canceled
+			}
+			select {
+			case e := <-done:
+				if !errors.Is(e, want) {
+					t.Fatalf("default browser ignored context: %v", e)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("default browser process outlived context")
+			}
+		})
+	}
+}
+
+func TestRunLinkReadOnlyFileMountStopsBeforeProvider(t *testing.T) {
+	p := os.Getenv("DINERO_TEST_READONLY_CONFIG")
+	if p == "" {
+		t.Skip("requires disposable read-only file bind mount")
+	}
+	info, e := os.Stat(p)
+	if e != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0222 == 0 {
+		t.Fatal("mount fixture must be a regular file with writable mode bits")
+	}
+	probe, e := os.CreateTemp(filepath.Dir(p), "writable-parent-*")
+	if e != nil {
+		t.Fatal("mount parent must remain writable")
+	}
+	probe.Close()
+	defer os.Remove(probe.Name())
+	f := successfulLink()
+	o := options(t, p, f)
+	_, e = RunLink(context.Background(), o)
+	if e == nil || f.creates != 0 || f.exchanges != 0 {
+		t.Fatalf("read-only mount reached provider: %v creates=%d exchanges=%d", e, f.creates, f.exchanges)
 	}
 }

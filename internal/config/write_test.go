@@ -101,3 +101,31 @@ func TestSaveLinkRejectsCredentialReplacement(t *testing.T) {
 		}
 	}
 }
+
+func TestPreflightReadOnlyFileMountWithWritableParent(t *testing.T) {
+	path := os.Getenv("DINERO_TEST_READONLY_CONFIG")
+	if path == "" {
+		t.Skip("requires disposable read-only file bind mount")
+	}
+	info, e := os.Stat(path)
+	if e != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0222 == 0 {
+		t.Fatal("mount fixture must retain writable file mode bits")
+	}
+	probe, e := os.CreateTemp(filepath.Dir(path), "writable-parent-*")
+	if e != nil {
+		t.Fatal("mount parent must remain writable")
+	}
+	probe.Close()
+	defer os.Remove(probe.Name())
+	before, e := os.ReadFile(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = config.PreflightWritable(path); e == nil {
+		t.Fatal("read-only file mount passed preflight")
+	}
+	after, e := os.ReadFile(path)
+	if e != nil || string(before) != string(after) {
+		t.Fatal("preflight mutated config")
+	}
+}

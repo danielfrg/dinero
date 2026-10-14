@@ -22,7 +22,7 @@ type Dependencies struct {
 	PlaidClient  plaid.Client
 	LinkProvider plaid.LinkProvider
 	LinkClock    plaid.LinkClock
-	OpenBrowser  func(string) error
+	OpenBrowser  func(context.Context, string) error
 }
 
 func NewRoot(deps Dependencies) *cobra.Command {
