@@ -162,3 +162,13 @@ func TestBalanceUsesHalfEvenOnSQLSum(t *testing.T) {
 		t.Fatalf("half-even %d %q %q", status, out, stderr)
 	}
 }
+
+func TestSearchExplicitZeroLimitPreservesLegacyEmptyResult(t *testing.T) {
+	fx := testutil.NewSQLite(t)
+	queryConfig(t, fx.DSN)
+	fx.Insert(t, "2026-09-02 12:00:00", "present", 1, "Test Account")
+	status, out, stderr := run("search", "--limit", "0", "--json")
+	if status != 0 || strings.TrimSpace(out) != "[]" || stderr != "" {
+		t.Fatalf("zero limit %d %q %q", status, out, stderr)
+	}
+}

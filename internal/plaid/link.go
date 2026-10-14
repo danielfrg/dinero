@@ -39,7 +39,7 @@ func (r LinkResult) String() string {
 }
 func (r LinkResult) GoString() string { return r.String() }
 
-type LinkedAccount struct{ ID, Name string }
+type LinkedAccount struct{ ID, Name, Institution, Mask string }
 type LinkProvider interface {
 	CreateHostedLink(context.Context, string, *string) (LinkSession, error)
 	GetLinkResult(context.Context, LinkSession) (LinkResult, error)
@@ -82,7 +82,7 @@ type LinkOptions struct {
 	Clock                       LinkClock
 	OpenBrowser                 func(context.Context, string) error
 	ShowURL                     func(string) error
-	NameAccounts                func([]LinkedAccount, map[string]string) (map[string]string, error)
+	NameAccounts                func(context.Context, []LinkedAccount, map[string]string) (map[string]string, error)
 }
 type SafeLinkResult struct {
 	Alias     string            `json:"alias"`
@@ -99,7 +99,11 @@ func linkError(ctx context.Context, operation string, err error) error {
 	if errors.As(err, &login) {
 		return login
 	}
-	return fmt.Errorf("Plaid %s failed", operation)
+	var provider *ErrProvider
+	if errors.As(err, &provider) {
+		return provider
+	}
+	return &ErrProvider{operation: operation}
 }
 func (c *SDKClient) CreateHostedLink(ctx context.Context, alias string, existingToken *string) (LinkSession, error) {
 	req := sdk.NewLinkTokenCreateRequest("Dinero", "en", []sdk.CountryCode{sdk.COUNTRYCODE_US})
@@ -204,6 +208,7 @@ func (c *SDKClient) GetAccounts(ctx context.Context, token string) ([]LinkedAcco
 	if err != nil {
 		return nil, safeSDKLinkError(ctx, "accounts/get", err)
 	}
+	item := resp.GetItem()
 	result := make([]LinkedAccount, 0, len(resp.GetAccounts()))
 	seen := map[string]bool{}
 	for _, a := range resp.GetAccounts() {
@@ -212,7 +217,7 @@ func (c *SDKClient) GetAccounts(ctx context.Context, token string) ([]LinkedAcco
 			return nil, errors.New("Plaid returned invalid account IDs")
 		}
 		seen[id] = true
-		result = append(result, LinkedAccount{ID: id, Name: a.GetName()})
+		result = append(result, LinkedAccount{ID: id, Name: a.GetName(), Mask: a.GetMask(), Institution: item.GetInstitutionName()})
 	}
 	return result, nil
 }
@@ -299,7 +304,7 @@ func RunLink(ctx context.Context, opts LinkOptions) (SafeLinkResult, error) {
 	if provider == nil {
 		provider, err = New(cfg.Plaid.ClientID, cfg.Plaid.Secret, cfg.Plaid.Env)
 		if err != nil {
-			return result, errors.New("invalid Plaid Link configuration")
+			return result, err
 		}
 	}
 	if err = ctx.Err(); err != nil {
@@ -388,10 +393,16 @@ func RunLink(ctx context.Context, opts LinkOptions) (SafeLinkResult, error) {
 			}
 			mappings := defaultAccountNames(opts.Alias, accounts, cfg.Plaid.AccountIDToName)
 			if opts.NameAccounts != nil {
-				mappings, e = opts.NameAccounts(accounts, cfg.Plaid.AccountIDToName)
+				mappings, e = opts.NameAccounts(ctx, accounts, cfg.Plaid.AccountIDToName)
 				if e != nil {
+					if ctx.Err() != nil {
+						return result, ctx.Err()
+					}
 					return result, errors.New("Link credentials saved; account naming did not complete")
 				}
+			}
+			if e = validateAccountNames(accounts, mappings, cfg.Plaid.AccountIDToName); e != nil {
+				return result, e
 			}
 			credentials.Accounts = mappings
 			if e = opts.Store.Save(ctx, path, credentials); e != nil {
@@ -430,16 +441,68 @@ func defaultAccountNames(alias string, accounts []LinkedAccount, prior map[strin
 			result[a.ID] = name
 			continue
 		}
-		base := alias + " - " + strings.TrimSpace(a.Name)
-		if strings.TrimSpace(a.Name) == "" {
-			base = alias + " - Account"
+		institution := strings.TrimSpace(a.Institution)
+		if institution == "" {
+			institution = alias
 		}
-		name := base
+		base := truncateName(institution, 20) + " - " + strings.TrimSpace(a.Name)
+		if strings.TrimSpace(a.Name) == "" {
+			base = truncateName(institution, 20) + " - Account"
+		}
+		suffix := ""
+		if mask := strings.TrimSpace(a.Mask); mask != "" {
+			suffix = " (" + truncateName(mask, 10) + ")"
+		}
+		name := truncateName(base, 50-len([]rune(suffix))) + suffix
 		for n := 2; used[name]; n++ {
-			name = fmt.Sprintf("%s (%d)", base, n)
+			collision := fmt.Sprintf(" (%d)", n)
+			name = truncateName(base, 50-len([]rune(suffix+collision))) + suffix + collision
 		}
 		used[name] = true
 		result[a.ID] = name
 	}
 	return result
+}
+
+// DefaultAccountNames retains mappings and derives deterministic bounded defaults.
+func DefaultAccountNames(alias string, accounts []LinkedAccount, prior map[string]string) map[string]string {
+	return defaultAccountNames(alias, accounts, prior)
+}
+func truncateName(name string, max int) string {
+	r := []rune(name)
+	if len(r) > max {
+		r = r[:max]
+	}
+	return strings.TrimSpace(string(r))
+}
+func validateAccountNames(accounts []LinkedAccount, names, prior map[string]string) error {
+	used := map[string]string{}
+	for id, name := range prior {
+		used[name] = id
+	}
+	for _, a := range accounts {
+		name := names[a.ID]
+		if prior[a.ID] != "" && name != prior[a.ID] {
+			return errors.New("Link credentials saved; existing account names cannot change")
+		}
+		if strings.TrimSpace(name) == "" || (prior[a.ID] == "" && len([]rune(name)) > 50) {
+			return errors.New("Link credentials saved; new account names must be 1 through 50 characters")
+		}
+		if owner, ok := used[name]; ok && owner != a.ID {
+			return errors.New("Link credentials saved; account name is already assigned")
+		}
+		used[name] = a.ID
+	}
+	for id := range names {
+		found := false
+		for _, a := range accounts {
+			if a.ID == id {
+				found = true
+			}
+		}
+		if !found {
+			return errors.New("Link credentials saved; unknown account mapping")
+		}
+	}
+	return nil
 }

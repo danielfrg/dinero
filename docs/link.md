@@ -24,9 +24,14 @@ temporary Hosted Link URL private; it contains session state.
 
 New connections exchange one public token and immediately save the access
 token and Item ID before retrieving or naming accounts. Existing account names
-are retained. New account names use `ALIAS - Provider Name`; duplicate names
-get deterministic numeric suffixes such as `(2)`. You can adjust new names in
-`[plaid.account_id_to_name]` afterward. Update mode supplies the existing access
+are retained. In a terminal, each new account prompts on stderr for a friendly
+name after credentials are durable; press Enter to accept the displayed default.
+Without a terminal, names are chosen deterministically from the available
+institution (or alias), provider account name, and mask. Names fit the existing
+50-character account column; duplicate defaults get numeric suffixes such as
+`(2)`. A chosen name that is already assigned, empty, or longer than 50 characters
+fails without changing another account's mapping. Ctrl-C or the Link deadline
+also stops naming promptly while keeping the saved credentials. Update mode supplies the existing access
 token, omits products for ordinary credential repair, and performs no exchange.
 A finished update session needs a success callback or HANDOFF event; an exit
 is a failure. Empty, mismatched, or multiple-Item results are rejected.

@@ -1,9 +1,11 @@
 package maintenance_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -220,6 +222,97 @@ func TestExportFailurePreservesPreviousArtifacts(t *testing.T) {
 			entries, err := os.ReadDir(dir)
 			if err != nil || len(entries) != 2 {
 				t.Fatalf("temporary files leaked: %v %v", entries, err)
+			}
+		})
+	}
+}
+
+func TestExportRejectsSQLiteSourceAliasesBeforePublication(t *testing.T) {
+	for _, kind := range []string{"direct", "relative", "uri", "relative-uri", "directory-symlink", "hardlink-db", "hardlink-csv", "source-csv"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			source := filepath.Join(dir, "transactions.db")
+			if kind == "source-csv" {
+				source = filepath.Join(dir, "all.csv")
+			}
+			db, err := sql.Open("sqlite", source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			if _, err = db.Exec("CREATE TABLE transactions (id INTEGER PRIMARY KEY AUTOINCREMENT,date DATETIME,description TEXT,category TEXT,subcategory TEXT,amount FLOAT,notes TEXT,account TEXT); INSERT INTO transactions VALUES (1,'2026-09-01','source','','',1,'','Checking')"); err != nil {
+				t.Fatal(err)
+			}
+			output := dir
+			dsn := source
+			switch kind {
+			case "relative", "relative-uri":
+				dsn, err = filepath.Rel(func() string { p, _ := os.Getwd(); return p }(), source)
+				if kind == "relative-uri" {
+					dsn = "file:" + dsn + "?mode=ro"
+				}
+			case "uri":
+				dsn = (&url.URL{Scheme: "file", Path: source, RawQuery: "mode=ro"}).String()
+			case "directory-symlink":
+				output = filepath.Join(t.TempDir(), "alias")
+				err = os.Symlink(dir, output)
+			case "hardlink-db", "hardlink-csv":
+				output = t.TempDir()
+				target := "transactions.db"
+				if kind == "hardlink-csv" {
+					target = "all.csv"
+				}
+				err = os.Link(source, filepath.Join(output, target))
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			previous := filepath.Join(output, "all.csv")
+			if kind == "hardlink-csv" || kind == "source-csv" {
+				previous = filepath.Join(output, "transactions.db")
+			}
+			if previous != source {
+				if err := os.WriteFile(previous, []byte("previous export"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := os.ReadFile(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prior, err := os.ReadFile(previous)
+			if err != nil {
+				t.Fatal(err)
+			}
+			st, err := store.Open(context.Background(), dsn, true, "UTC")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			// Deliberately conflicting config: the actual opened store is authoritative.
+			err = maintenance.New(st, config.Config{Timezone: "UTC", Database: config.Database{ConnectionString: "sqlite:///unused.db"}}).Export(context.Background(), output)
+			if err == nil || !strings.Contains(err.Error(), "source") {
+				t.Fatalf("source export accepted: %v", err)
+			}
+			after, err := os.ReadFile(source)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("source bytes changed", err)
+			}
+			after, err = os.ReadFile(previous)
+			if err != nil || !bytes.Equal(prior, after) {
+				t.Fatal("previous export changed", err)
+			}
+			var schema string
+			if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE name='transactions'").Scan(&schema); err != nil || !strings.Contains(schema, "PRIMARY KEY AUTOINCREMENT") {
+				t.Fatal("schema changed", schema, err)
+			}
+			var count int
+			if err := db.QueryRow("SELECT count(*) FROM transactions WHERE id=1 AND description='source'").Scan(&count); err != nil || count != 1 {
+				t.Fatal("rows changed", count, err)
+			}
+			entries, err := os.ReadDir(output)
+			if err != nil || len(entries) != 2 {
+				t.Fatal("export artifacts created", entries, err)
 			}
 		})
 	}

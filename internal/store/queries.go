@@ -273,25 +273,28 @@ func (s *Store) Balance(ctx context.Context, account, through string) (ledger.Ba
 	var boundary any = day
 	table := "public.transactions"
 	sum := "COALESCE(SUM(amount),0)::text"
+	unrepresentable := "FALSE"
 	if s.dialect == "sqlite" {
 		boundary = day.Format("2006-01-02 15:04:05")
 		table = "transactions"
 		sum = "CAST(COALESCE(SUM(amount),0) AS TEXT)"
+		unrepresentable = "SUM(amount) IS NULL AND COUNT(amount) > 0"
 	}
-	stmt := "SELECT " + sum + ",COALESCE(SUM(CASE WHEN " + s.validAmountSQL() + " THEN 0 ELSE 1 END),0) FROM " + table + " WHERE account = " + s.placeholder(1) + " AND date < " + s.placeholder(2)
+	stmt := "SELECT " + sum + ",COALESCE(SUM(CASE WHEN " + s.validAmountSQL() + " THEN 0 ELSE 1 END),0)," + unrepresentable + " FROM " + table + " WHERE account = " + s.placeholder(1) + " AND date < " + s.placeholder(2)
 	var amount string
 	var incomplete int64
+	var unavailable bool
 	tx, readCtx, cancel, err := s.readTx(ctx)
 	if err != nil {
 		return ledger.Balance{}, err
 	}
 	defer cancel()
 	defer tx.Rollback()
-	if err = tx.QueryRowContext(readCtx, stmt, account, boundary).Scan(&amount, &incomplete); err != nil {
+	if err = tx.QueryRowContext(readCtx, stmt, account, boundary).Scan(&amount, &incomplete, &unavailable); err != nil {
 		return ledger.Balance{}, &ledger.ErrUnavailable{}
 	}
 	if err = tx.Commit(); err != nil {
 		return ledger.Balance{}, &ledger.ErrUnavailable{}
 	}
-	return ledger.Balance{Account: account, Through: through, Amount: amount, IncompleteAmountCount: incomplete}, nil
+	return ledger.Balance{Account: account, Through: through, Amount: amount, IncompleteAmountCount: incomplete, Unrepresentable: unavailable}, nil
 }

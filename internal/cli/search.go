@@ -76,7 +76,7 @@ func newSearchCommand(deps Dependencies, configPath *string) *cobra.Command {
 		if cmd.Flags().Changed("month") {
 			q.Month = &month
 		}
-		page, err := svc.Search(ctx, q)
+		page, err := svc.SearchLegacy(ctx, q)
 		if err != nil {
 			return err
 		}

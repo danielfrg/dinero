@@ -3,7 +3,9 @@ package ledger
 import (
 	"context"
 	"github.com/danielfrg/dinero/internal/config"
+	"math"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -66,6 +68,18 @@ func (s *Service) Search(ctx context.Context, q Query) (Page, error) {
 	}
 	return p, err
 }
+
+// SearchLegacy preserves the explicit SQL LIMIT 0 accepted by the Python CLI.
+// Transport adapters continue to normalize omitted limits and reject zero.
+func (s *Service) SearchLegacy(ctx context.Context, q Query) (Page, error) {
+	if q.Limit == 0 {
+		if err := s.validateQuery(q); err != nil {
+			return Page{}, err
+		}
+		return Page{Transactions: []Transaction{}, Limit: 0, Offset: q.Offset}, nil
+	}
+	return s.Search(ctx, q)
+}
 func (s *Service) Accounts(ctx context.Context) ([]Account, error) {
 	rows, err := s.repo.Accounts(ctx)
 	if err != nil {
@@ -105,6 +119,14 @@ func (s *Service) Categories(ctx context.Context) (Categories, error) {
 	return c, err
 }
 func (s *Service) Balance(ctx context.Context, account, through string) (Balance, error) {
+	return s.balance(ctx, account, through, true)
+}
+
+// BalanceLegacy retains the CLI decimal-string contract and validation.
+func (s *Service) BalanceLegacy(ctx context.Context, account, through string) (Balance, error) {
+	return s.balance(ctx, account, through, false)
+}
+func (s *Service) balance(ctx context.Context, account, through string, nullable bool) (Balance, error) {
 	if account == "" {
 		return Balance{}, &ErrInvalidInput{Field: "account", Reason: "required"}
 	}
@@ -137,6 +159,16 @@ func (s *Service) Balance(ctx context.Context, account, through string) (Balance
 	b.Through = through
 	if b.Amount == "" {
 		b.Amount = "0"
+	}
+	if nullable {
+		if b.Unrepresentable {
+			b.Amount = ""
+			return b, nil
+		}
+		if value, e := strconv.ParseFloat(b.Amount, 64); e == nil && (math.IsNaN(value) || math.IsInf(value, 0)) {
+			b.Amount = ""
+			return b, nil
+		}
 	}
 	b.Amount, err = FormatMoney(b.Amount)
 	return b, err

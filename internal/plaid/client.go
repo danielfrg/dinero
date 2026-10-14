@@ -3,7 +3,6 @@ package plaid
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -51,7 +50,7 @@ func New(clientID, secret, environment string) (*SDKClient, error) {
 	case "development":
 		return nil, errors.New("Plaid development environment is obsolete; use sandbox or production")
 	default:
-		return nil, fmt.Errorf("unsupported Plaid environment %q; use sandbox or production", environment)
+		return nil, errors.New("unsupported Plaid environment; use sandbox or production")
 	}
 	cfg.AddDefaultHeader("PLAID-CLIENT-ID", clientID)
 	cfg.AddDefaultHeader("PLAID-SECRET", secret)

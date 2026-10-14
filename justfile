@@ -14,13 +14,13 @@ check:
 compat: build
     uv run --offline python testdata/compat/check.py --go-executable bin/dinero-go
 
-transactions:
+transactions: build
     bin/dinero-go transactions --yes
 
-rules:
+rules: build
     bin/dinero-go mkrules --commit --yes
 
-dataset:
+dataset: build
     bin/dinero-go mkdataset
 
 [working-directory: 'dashboards']

@@ -33,6 +33,8 @@ type CategoryPair struct{ Category, Subcategory string }
 type Balance struct {
 	Account, Through, Amount string
 	IncompleteAmountCount    int64
+	// SQLite can produce NULL from opposing infinities before legacy COALESCE.
+	Unrepresentable bool
 }
 type SummaryQuery struct {
 	Query   Query

@@ -18,6 +18,7 @@ var Version = "dev"
 
 // Dependencies lets commands share config access without global state.
 type Dependencies struct {
+	IsTerminal   func(io.Reader) bool
 	LoadConfig   func(string) (config.Config, error)
 	Listen       func(network, address string) (net.Listener, error)
 	PlaidClient  plaid.Client

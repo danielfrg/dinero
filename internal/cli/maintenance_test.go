@@ -221,3 +221,38 @@ func TestInitDBCreatesMissingPostgresDatabase(t *testing.T) {
 		t.Fatalf("schema columns %d %v", n, err)
 	}
 }
+
+func TestExportRejectsActualEnvironmentSource(t *testing.T) {
+	fx := testutil.NewSQLite(t)
+	fx.Insert(t, "2026-09-01 08:00:00", "source", 1, "Checking")
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("timezone='UTC'\n[database]\nconnection_string='sqlite:///unused-synthetic.db'\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DINERO_CONFIG_FILE", path)
+	t.Setenv("DINERO_DATABASE_URL", "sqlite:///file:"+fx.DSN+"?mode=ro")
+	dir := t.TempDir()
+	if err := os.Link(fx.DSN, filepath.Join(dir, "transactions.db")); err != nil {
+		t.Fatal(err)
+	}
+	prior := filepath.Join(dir, "all.csv")
+	if err := os.WriteFile(prior, []byte("previous CSV"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(fx.DSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, out, stderr := run("mkdataset", "--directory", dir, "--json")
+	if status == 0 || out != "" || !strings.Contains(stderr, "source") {
+		t.Fatalf("environment source export %d %q %q", status, out, stderr)
+	}
+	after, err := os.ReadFile(fx.DSN)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("environment source changed", err)
+	}
+	csv, err := os.ReadFile(prior)
+	if err != nil || string(csv) != "previous CSV" {
+		t.Fatal("prior export changed", err)
+	}
+}

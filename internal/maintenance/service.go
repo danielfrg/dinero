@@ -1,6 +1,7 @@
 package maintenance
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/csv"
@@ -99,7 +100,7 @@ func (s *Service) SaveRules(ctx context.Context, rules map[string][2]string) err
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return atomicRules(ctx, path, bytes.NewReader(data))
 }
 func (s *Service) BuildCache(ctx context.Context) error {
 	rows, err := s.store.RawTransactions(ctx)
@@ -166,12 +167,26 @@ func writeJSON(path string, value any) error {
 }
 
 func (s *Service) Export(ctx context.Context, directory string) error {
-	rows, err := s.store.RawTransactions(ctx)
+	if directory == "" {
+		return errors.New("export directory is required")
+	}
+	csvPath := filepath.Join(directory, "all.csv")
+	dbPath := filepath.Join(directory, "transactions.db")
+	source, err := s.store.SQLiteSourcePath(ctx)
 	if err != nil {
 		return err
 	}
-	if directory == "" {
-		return errors.New("export directory is required")
+	for _, target := range []string{csvPath, dbPath} {
+		if err := rejectSourceTarget(source, target); err != nil {
+			return err
+		}
+		if err := replaceableExportTarget(target); err != nil {
+			return err
+		}
+	}
+	rows, err := s.store.RawTransactions(ctx)
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return err
@@ -265,8 +280,6 @@ func (s *Service) Export(ctx context.Context, directory string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	csvPath := filepath.Join(directory, "all.csv")
-	dbPath := filepath.Join(directory, "transactions.db")
 	if err := replaceableExportTarget(csvPath); err != nil {
 		return err
 	}
@@ -277,6 +290,51 @@ func (s *Service) Export(ctx context.Context, directory string) error {
 		return err
 	}
 	return os.Rename(csvTempPath, csvPath)
+}
+
+// Compare canonical paths and file identity: hard links and symlinked directory
+// aliases must not allow an export to replace its live SQLite source.
+func rejectSourceTarget(source, target string) error {
+	if source == "" {
+		return nil
+	}
+	sourceInfo, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+	targetInfo, err := os.Stat(target)
+	if err == nil && os.SameFile(sourceInfo, targetInfo) {
+		return errors.New("export target overlaps SQLite source")
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	sourcePath, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		return err
+	}
+	targetPath, err := filepath.EvalSymlinks(target)
+	if os.IsNotExist(err) {
+		parent, e := filepath.EvalSymlinks(filepath.Dir(target))
+		if e != nil && !os.IsNotExist(e) {
+			return e
+		}
+		if e == nil {
+			targetPath = filepath.Join(parent, filepath.Base(target))
+			err = nil
+		}
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err == nil {
+		sourcePath, _ = filepath.Abs(sourcePath)
+		targetPath, _ = filepath.Abs(targetPath)
+		if sourcePath == targetPath {
+			return errors.New("export target overlaps SQLite source")
+		}
+	}
+	return nil
 }
 
 func replaceableExportTarget(path string) error {

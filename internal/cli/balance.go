@@ -19,7 +19,7 @@ func newBalanceCommand(deps Dependencies, configPath *string) *cobra.Command {
 			return err
 		}
 		defer db.Close()
-		b, err := svc.Balance(ctx, account, through)
+		b, err := svc.BalanceLegacy(ctx, account, through)
 		if err != nil {
 			return err
 		}

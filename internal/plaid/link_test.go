@@ -114,7 +114,7 @@ func TestRunLinkNewPersistsBeforeNamingAndPreservesAccounts(t *testing.T) {
 	p := linkFixture(t)
 	f := successfulLink()
 	o := options(t, p, f)
-	o.NameAccounts = func(a []LinkedAccount, prior map[string]string) (map[string]string, error) {
+	o.NameAccounts = func(_ context.Context, a []LinkedAccount, prior map[string]string) (map[string]string, error) {
 		cfg, e := config.Load(p)
 		if e != nil || cfg.Plaid.Tokens["new"] != accessSentinel || cfg.Plaid.ItemIDs["new"] != "item" {
 			t.Fatal("credentials not durable before naming")
@@ -489,24 +489,22 @@ func TestRunLinkNamingCollisionPreservesCredentials(t *testing.T) {
 	p := linkFixture(t)
 	f := successfulLink()
 	o := options(t, p, f)
-	o.NameAccounts = func([]LinkedAccount, map[string]string) (map[string]string, error) {
+	o.NameAccounts = func(context.Context, []LinkedAccount, map[string]string) (map[string]string, error) {
 		return map[string]string{"b": "Existing"}, nil
 	}
 	_, e := RunLink(context.Background(), o)
-	var recovery *RecoveryError
-	if !errors.As(e, &recovery) {
-		t.Fatalf("collision lacked recovery: %v", e)
+	if e == nil || !strings.Contains(e.Error(), "Link credentials saved;") {
+		t.Fatalf("collision accepted: %v", e)
 	}
 	cfg, _ := config.Load(p)
-	if cfg.Plaid.Tokens["new"] != accessSentinel || cfg.Plaid.AccountIDToName["b"] != "" {
+	if cfg.Plaid.Tokens["new"] != accessSentinel || cfg.Plaid.AccountIDToName["a"] != "Existing" || cfg.Plaid.AccountIDToName["b"] != "" {
 		t.Fatal("collision damaged config")
 	}
-	if _, e = ResumeLink(context.Background(), recovery.Path, p); e == nil {
-		t.Fatal("resume accepted conflicting name")
+	entries, err := os.ReadDir(o.StateDir)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("invalid mappings protected instead of rejected", entries, err)
 	}
-	if _, e = os.Stat(recovery.Path); e != nil {
-		t.Fatal("failed resume deleted credentials")
-	}
+
 }
 
 func TestProviderIdentifiersRedactGoSyntaxFormatting(t *testing.T) {
@@ -668,6 +666,16 @@ func TestBlockedBrowserHonorsWorkflowCancellationAndReleasesLock(t *testing.T) {
 	}
 }
 
+// Preserve the expiry cause for a deadline armed after helper startup.
+type browserCauseContext struct{ context.Context }
+
+func (c browserCauseContext) Err() error {
+	if c.Context.Err() != nil {
+		return context.Cause(c.Context)
+	}
+	return nil
+}
+
 func TestDefaultBrowserProcessHonorsContext(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix test opener fixture")
@@ -685,8 +693,9 @@ func TestDefaultBrowserProcessHonorsContext(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			pidPath := filepath.Join(t.TempDir(), "browser.pid")
 			t.Setenv("DINERO_TEST_BROWSER_PID", pidPath)
-			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-			defer cancel()
+			base, cancel := context.WithCancelCause(context.Background())
+			ctx := browserCauseContext{base}
+			defer cancel(context.Canceled)
 			done := make(chan error, 1)
 			go func() { done <- OpenBrowser(ctx, "https://secure.plaid.com/hosted/session") }()
 			// Observe that the helper really started and is blocked; cleanup also
@@ -712,8 +721,13 @@ func TestDefaultBrowserProcessHonorsContext(t *testing.T) {
 			}
 			want := context.DeadlineExceeded
 			if kind == "cancel" {
-				cancel()
+				cancel(context.Canceled)
 				want = context.Canceled
+			} else {
+				// Start the tested deadline only once the real blocked helper is observed.
+				timeoutCtx, stop := context.WithTimeout(context.Background(), 100*time.Millisecond)
+				defer stop()
+				go func() { <-timeoutCtx.Done(); cancel(timeoutCtx.Err()) }()
 			}
 			select {
 			case e := <-done:
@@ -747,5 +761,49 @@ func TestRunLinkReadOnlyFileMountStopsBeforeProvider(t *testing.T) {
 	_, e = RunLink(context.Background(), o)
 	if e == nil || f.creates != 0 || f.exchanges != 0 {
 		t.Fatalf("read-only mount reached provider: %v creates=%d exchanges=%d", e, f.creates, f.exchanges)
+	}
+}
+
+func TestRunLinkKeepsSafeProviderClassificationAndFactoryGuidance(t *testing.T) {
+	p := linkFixture(t)
+	for _, err := range []error{&ErrProvider{operation: "accounts/get"}, errors.New(accessSentinel)} {
+		f := successfulLink()
+		f.err = err
+		_, got := RunLink(context.Background(), options(t, p, f))
+		var provider *ErrProvider
+		if !errors.As(got, &provider) {
+			t.Fatalf("provider classification lost: %T %v", got, got)
+		}
+		assertNoSecrets(t, got)
+	}
+	data := "[database]\nconnection_string='sqlite:///synthetic.db'\n[plaid]\nclient_id='" + accessSentinel + "'\nsecret='" + publicSentinel + "'\nenv='development'\n"
+	if err := os.WriteFile(p, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	o := options(t, p, successfulLink())
+	o.Provider = nil
+	_, err := RunLink(context.Background(), o)
+	if err == nil || !strings.Contains(err.Error(), "obsolete; use sandbox or production") {
+		t.Fatalf("factory guidance lost: %v", err)
+	}
+	assertNoSecrets(t, err)
+}
+
+func TestAccountDefaultsUseMetadataAndFitLegacyColumn(t *testing.T) {
+	var accounts []LinkedAccount
+	raw := fmt.Sprintf(`[{"ID":"a","Name":%q,"Institution":"Bank","Mask":"1234"},{"ID":"b","Name":%q,"Institution":"Bank","Mask":"5678"},{"ID":"c","Name":%q,"Institution":"Bank","Mask":"1234"},{"ID":"old","Name":"Changed"}]`, strings.Repeat("Savings", 12), strings.Repeat("Savings", 12), strings.Repeat("Savings", 12))
+	if err := json.Unmarshal([]byte(raw), &accounts); err != nil {
+		t.Fatal(err)
+	}
+	names := defaultAccountNames("alias", accounts, map[string]string{"old": "Preserved"})
+	used := map[string]bool{}
+	for id, name := range names {
+		if len([]rune(name)) > 50 || name == "" || used[name] {
+			t.Fatalf("invalid default %s: %q", id, name)
+		}
+		used[name] = true
+	}
+	if names["old"] != "Preserved" || !strings.HasPrefix(names["a"], "Bank - ") || !strings.Contains(names["a"], "1234") || !strings.Contains(names["b"], "5678") {
+		t.Fatalf("metadata missing %v", names)
 	}
 }

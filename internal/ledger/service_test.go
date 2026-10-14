@@ -3,6 +3,9 @@ package ledger_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/danielfrg/dinero/internal/testutil"
+	"math"
 	"testing"
 
 	"github.com/danielfrg/dinero/internal/config"
@@ -55,3 +58,43 @@ func TestServiceValidatesQueriesAndKnowsConfiguredAccounts(t *testing.T) {
 	}
 }
 func ptr(v int) *int { return &v }
+
+func TestRichBalanceNonfiniteRetainsCompleteness(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "postgres"} {
+		for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+			t.Run(dialect+"/"+fmt.Sprint(value), func(t *testing.T) {
+				var fx *testutil.Fixture
+				if dialect == "sqlite" {
+					fx = testutil.NewSQLite(t)
+				} else {
+					fx = testutil.NewPostgres(t)
+				}
+				fx.Insert(t, "2026-03-08 12:00:00", "nonfinite", value, "Checking")
+				svc := ledger.NewService(fx.Open(t, "UTC"), config.Config{Timezone: "UTC"})
+				b, err := svc.Balance(context.Background(), "Checking", "2026-03-08")
+				want := ""
+				if dialect == "sqlite" && math.IsNaN(value) {
+					want = "0.00"
+				} // SQLite stores NaN as NULL.
+				if err != nil || b.Amount != want || b.Account != "Checking" || b.Through != "2026-03-08" || b.IncompleteAmountCount != 1 {
+					t.Fatalf("nonfinite balance %+v %v", b, err)
+				}
+			})
+		}
+	}
+}
+
+func TestSQLiteOpposingInfinitiesRichBalanceIsNull(t *testing.T) {
+	fx := testutil.NewSQLite(t)
+	fx.Insert(t, "2026-03-08 12:00:00", "positive", math.Inf(1), "Checking")
+	fx.Insert(t, "2026-03-08 12:00:00", "negative", math.Inf(-1), "Checking")
+	svc := ledger.NewService(fx.Open(t, "UTC"), config.Config{Timezone: "UTC"})
+	got, err := svc.Balance(context.Background(), "Checking", "2026-03-08")
+	if err != nil || got.Amount != "" || got.IncompleteAmountCount != 2 {
+		t.Fatalf("opposing infinities fabricated total %+v %v", got, err)
+	}
+	legacy, err := svc.BalanceLegacy(context.Background(), "Checking", "2026-03-08")
+	if err != nil || legacy.Amount != "0.00" {
+		t.Fatalf("legacy SQL COALESCE changed %+v %v", legacy, err)
+	}
+}

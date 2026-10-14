@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"github.com/danielfrg/dinero/internal/config"
 	"github.com/danielfrg/dinero/internal/plaid"
+	"io"
 	"log"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,5 +160,132 @@ func TestLinkCLIResumeUsesLocalFileAndNoProvider(t *testing.T) {
 	}
 	if strings.Contains(fmt.Sprint(&out, &errOut), "sentinel-access-private") {
 		t.Fatal("resume output leaked credentials")
+	}
+}
+
+type syntheticLinkTransport struct{ endpoint *url.URL }
+
+func (s syntheticLinkTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	copy := r.Clone(r.Context())
+	u := *r.URL
+	u.Scheme = s.endpoint.Scheme
+	u.Host = s.endpoint.Host
+	copy.URL = &u
+	return http.DefaultTransport.RoundTrip(copy)
+}
+func TestLinkCLITerminalNamingAfterPersistence(t *testing.T) {
+	for _, kind := range []string{"terminal", "nonterminal", "collision", "too-long", "cancel"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Setenv("DINERO_STATE_DIR", t.TempDir())
+			p := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(p, []byte("[database]\nconnection_string='sqlite:///synthetic.db'\n[plaid.account_id_to_name]\na='Preserved'\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/link/token/create":
+					fmt.Fprint(w, `{"link_token":"synthetic-link","hosted_link_url":"https://secure.plaid.com/hosted/session","expiration":"2026-10-14T12:00:00Z","request_id":"synthetic"}`)
+				case "/link/token/get":
+					fmt.Fprint(w, `{"link_token":"synthetic-link","link_sessions":[{"link_session_id":"session","finished_at":"2026-10-14T11:00:00Z","results":{"item_add_results":[{"public_token":"synthetic-public"}]}}],"request_id":"synthetic"}`)
+				case "/item/public_token/exchange":
+					fmt.Fprint(w, `{"access_token":"synthetic-access","item_id":"synthetic-item","request_id":"synthetic"}`)
+				case "/accounts/get":
+					fmt.Fprint(w, `{"accounts":[{"account_id":"a","name":"Changed","mask":"9999"},{"account_id":"b","name":"Savings","mask":"1234"}],"item":{"institution_name":"Bank"},"request_id":"synthetic"}`)
+				default:
+					t.Errorf("unexpected provider path %s", r.URL.Path)
+					w.WriteHeader(404)
+				}
+			}))
+			defer ts.Close()
+			u, _ := url.Parse(ts.URL)
+			prior := http.DefaultClient
+			http.DefaultClient = &http.Client{Transport: syntheticLinkTransport{endpoint: u}}
+			defer func() { http.DefaultClient = prior }()
+			provider, err := plaid.New("synthetic-client", "synthetic-secret", "sandbox")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			input := "Friendly Savings\n"
+			if kind == "collision" {
+				input = "Preserved\n"
+			}
+			if kind == "too-long" {
+				input = strings.Repeat("x", 51) + "\n"
+			}
+			var in io.Reader = strings.NewReader(input)
+			if kind == "cancel" {
+				reader, writer, err := os.Pipe()
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer reader.Close()
+				defer writer.Close()
+				in = reader
+			}
+			var out, errOut bytes.Buffer
+			root := NewRoot(Dependencies{LinkProvider: provider, LinkClock: &cliClock{}, IsTerminal: func(io.Reader) bool {
+				cfg, e := config.Load(p)
+				if e != nil || cfg.Plaid.Tokens["new"] != "synthetic-access" {
+					t.Fatal("terminal detected before durable credentials")
+				}
+				if kind == "cancel" {
+					cancel()
+				}
+				return kind != "nonterminal"
+			}})
+			root.SetIn(in)
+			root.SetOut(&out)
+			root.SetErr(&errOut)
+			root.SetArgs([]string{"--config", p, "link", "new", "--no-browser"})
+			done := make(chan error, 1)
+			go func() { done <- root.ExecuteContext(ctx) }()
+			select {
+			case err = <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("naming cancellation unbounded")
+			}
+			cfg, e := config.Load(p)
+			if e != nil || cfg.Plaid.Tokens["new"] != "synthetic-access" || cfg.Plaid.AccountIDToName["a"] != "Preserved" {
+				t.Fatal("credentials or existing mapping lost", e)
+			}
+			switch kind {
+			case "terminal":
+				if err != nil || cfg.Plaid.AccountIDToName["b"] != "Friendly Savings" || !strings.Contains(errOut.String(), "Bank - Savings (1234)") || strings.Contains(out.String(), "Account name") {
+					t.Fatalf("terminal naming %v %v %q", cfg.Plaid.AccountIDToName, err, errOut.String())
+				}
+			case "nonterminal":
+				if err != nil || cfg.Plaid.AccountIDToName["b"] != "Bank - Savings (1234)" || strings.Contains(errOut.String(), "Account name") {
+					t.Fatalf("nonterminal names %v %v", cfg.Plaid.AccountIDToName, err)
+				}
+			default:
+				if err == nil || cfg.Plaid.AccountIDToName["b"] != "" {
+					t.Fatalf("failed naming saved mapping %v %v", cfg.Plaid.AccountIDToName, err)
+				}
+			}
+		})
+	}
+}
+
+func TestAccountPromptDeadlineDoesNotWaitForInput(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := readAccountName(ctx, reader); done <- err }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("blocked terminal: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("prompt ignored deadline")
 	}
 }

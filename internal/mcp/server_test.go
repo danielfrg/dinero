@@ -3,7 +3,9 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -304,5 +306,36 @@ func TestMCPCancelsInFlightRepositoryReadOnDisconnect(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("canceled client call did not finish")
+	}
+}
+
+func TestRESTAndMCPNonfiniteBalancePreservesCompleteness(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "postgres"} {
+		for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+			t.Run(dialect+"/"+fmt.Sprint(value), func(t *testing.T) {
+				var fx *testutil.Fixture
+				if dialect == "sqlite" {
+					fx = testutil.NewSQLite(t)
+				} else {
+					fx = testutil.NewPostgres(t)
+				}
+				fx.Insert(t, "2026-03-08 12:00:00", "nonfinite", value, "Checking")
+				fx.Insert(t, "2026-03-08 12:00:00", "missing", nil, "Checking")
+				svc := ledger.NewService(fx.Open(t, "UTC"), config.Config{Timezone: "UTC"})
+				ts := httptest.NewServer(server.NewHandler(svc, httpapi.Options{Token: []byte(token)}, adapter.NewTransportHandler(svc)))
+				defer ts.Close()
+				session := connect(t, ts.URL+"/mcp")
+				for _, got := range []map[string]any{rest(t, ts.URL, "/api/balance?account=Checking&through=2026-03-08"), call(t, session, "get_balance", map[string]any{"account": "Checking", "through": "2026-03-08"})} {
+					amount, present := got["amount"]
+					var want any
+					if dialect == "sqlite" && math.IsNaN(value) {
+						want = "0.00"
+					}
+					if !present || amount != want || got["account"] != "Checking" || got["through"] != "2026-03-08" || got["incomplete_amount_count"] != float64(2) {
+						t.Fatalf("nonfinite response %v", got)
+					}
+				}
+			})
+		}
 	}
 }

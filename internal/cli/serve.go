@@ -40,7 +40,7 @@ func newServeCommand(deps Dependencies, configPath *string) *cobra.Command {
 		if !cmd.Flags().Changed("port") {
 			port = cfg.Server.Port
 		}
-		if port == 0 {
+		if port == 0 && !cmd.Flags().Changed("port") {
 			port = 8080
 		}
 		if port < 1 || port > 65535 {

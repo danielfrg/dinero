@@ -97,3 +97,17 @@ func TestServeBindsConfiguredAddressAndStopsOnCancellation(t *testing.T) {
 		t.Fatalf("stdout=%s", out.String())
 	}
 }
+
+func TestServeRejectsExplicitZeroPortBeforeDatabaseOrListen(t *testing.T) {
+	token := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(token, []byte("synthetic-read-token-123456"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DINERO_API_TOKEN_FILE", token)
+	root := cli.NewRoot(cli.Dependencies{LoadConfig: func(string) (config.Config, error) { return config.Config{}, nil }, Listen: func(string, string) (net.Listener, error) { t.Fatal("zero port listened"); return nil, nil }})
+	root.SetArgs([]string{"serve", "--port", "0"})
+	err := root.ExecuteContext(context.Background())
+	if err == nil || err.Error() != "port must be 1 through 65535" {
+		t.Fatalf("explicit port zero: %v", err)
+	}
+}
