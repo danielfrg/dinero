@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/danielfrg/dinero/internal/config"
+	"github.com/danielfrg/dinero/internal/plaid"
 	"github.com/spf13/cobra"
 )
 
@@ -16,8 +17,9 @@ const Version = "1.0.0-go"
 
 // Dependencies lets commands share config access without global state.
 type Dependencies struct {
-	LoadConfig func(string) (config.Config, error)
-	Listen     func(network, address string) (net.Listener, error)
+	LoadConfig  func(string) (config.Config, error)
+	Listen      func(network, address string) (net.Listener, error)
+	PlaidClient plaid.Client
 }
 
 func NewRoot(deps Dependencies) *cobra.Command {
@@ -53,6 +55,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		},
 	})
 	root.AddCommand(newSearchCommand(deps, &configPath), newBalanceCommand(deps, &configPath), newImportCSVCommand(deps, &configPath), newServeCommand(deps, &configPath))
+	root.AddCommand(newTransactionsCommand(deps, &configPath), newInitDBCommand(deps, &configPath), newRulesCommand(deps, &configPath), newCacheCommand(deps, &configPath), newExportCommand(deps, &configPath))
 	return root
 }
 
