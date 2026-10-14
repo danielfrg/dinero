@@ -46,6 +46,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			return err
 		},
 	})
+	root.AddCommand(newSearchCommand(deps, &configPath), newBalanceCommand(deps, &configPath))
 	return root
 }
 

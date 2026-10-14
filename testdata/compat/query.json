@@ -1,0 +1,4 @@
+{
+  "balance": {"account": "Test Account", "through": "2026-09-02", "amount": "15.25"},
+  "search": [{"id": 1, "date": "2026-09-02", "description": "Midnight", "category": "", "subcategory": "", "amount": 10, "account": "Test Account", "notes": "test"}]
+}
