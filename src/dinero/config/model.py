@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, BaseSettings
 
@@ -19,6 +19,7 @@ class Database(BaseModel):
 class RootConfig(BaseSettings):
     plaid: Plaid
     database: Database
+    server: Optional[Dict[str, Any]] = None
 
     timezone: str = "US/Central"
 

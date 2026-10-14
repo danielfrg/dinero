@@ -13,7 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const Version = "1.0.0-go"
+// Version is injected from release metadata by the image and release builds.
+var Version = "dev"
 
 // Dependencies lets commands share config access without global state.
 type Dependencies struct {

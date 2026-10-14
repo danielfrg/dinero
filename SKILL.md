@@ -1,110 +1,13 @@
 ---
 name: dinero
-description: |
-  You have access to dinero, a personal financial system used by the user.
-
-  Use for:
-  - Get transactions, accounts, amounts, categories, and subcategories
-
-version: 1.0.0
+description: Read the user's personal finance ledger through the authorized Dinero REST or MCP service, or local CLI fallback.
+version: 1.1.0
 ---
 
-`dinero` is a personal finance system used by the user that tracks all
-transaction in all the user bank accounts, credit cards and other financial
-institutions.
+Dinero exposes read-only transaction, account, category, balance, summary, and status data. Prefer the configured REST service or MCP connection when available. Use only the user's existing connection and read token; never print credentials. The server uses a separate static bearer read token, not a Plaid credential.
 
-You can make queries to the database using the dinero CLI using the `dinero search` command.
+For REST, discover the schema at `/api/openapi.json` and use `GET /api/accounts`, `/api/categories`, `/api/transactions`, `/api/balance`, `/api/summary`, or `/api/status` as needed. The server also has `/healthz` and `/readyz`. Send `Authorization: Bearer <read-token>` for protected routes. Search defaults to 50 rows, supports up to 500 per page, and uses stable ordering. Amounts in REST responses are decimal strings or null; currency is unknown in the legacy ledger.
 
-When asked about transactions, follow this process:
+For MCP, connect to `/mcp` with the same bearer header. Initialize the official Streamable HTTP session, list tools, then call `list_accounts`, `list_categories`, `search_transactions`, `get_balance`, `summarize_transactions`, or `get_status`. Plain `GET /mcp` is not initialization. MCP tools are read-only and expose no SQL, bank ingestion, Link, or tokens. A client that only supports OAuth needs a separately operated gateway that supplies the static read token.
 
-1. Read the cache files to get valid account names, categories, and subcategories:
-   - Read `~/.config/dinero/cache/accounts.json`
-   - Read `~/.config/dinero/cache/categories.json`
-   - If these files don't exist, run `dinero build-cache` first
-
-2. Construct the search query using the appropriate filters based on the user's request
-
-3. Execute the search and either present the results or analyze them based on the user's request
-
-Use `dinero balance` instead of `search --before` when a cumulative account
-amount is needed through the end of a day.
-
-## dinero balance
-
-Compute the cumulative Plaid-convention amount for one account, including all
-transactions on the `--through` date:
-
-```bash
-dinero balance --account "Chase Checking" --through 2026-08-31 --json
-```
-
-The JSON `amount` is a decimal string. Asset balances have the opposite sign;
-liability balances use the same sign.
-
-## dinero search
-
-Use the `dinero search` command with any combination of the following filters:
-
-```
-dinero search [OPTIONS]
-```
-
-| Flag               | Type   | Description                                                                  |
-| ------------------ | ------ | ---------------------------------------------------------------------------- |
-| `--account`        | string | Filter by account name (exact match)                                         |
-| `--category`       | string | Filter by category (exact match)                                             |
-| `--subcategory`    | string | Filter by subcategory (exact match)                                          |
-| `--description`    | string | Search in description (case-insensitive partial match)                       |
-| `--after`          | string | Transactions on or after this date (YYYY-MM-DD)                              |
-| `--before`         | string | Transactions on or before this date (YYYY-MM-DD)                             |
-| `--year`           | int    | Filter by year                                                               |
-| `--month`          | int    | Filter by month (1-12)                                                       |
-| `--limit`          | int    | Max rows returned (default: 50)                                              |
-| `--sort`           | string | Sort by column: date, amount, description, account, category (default: date) |
-| `--desc` / `--asc` | flag   | Sort direction (default: `--desc`, most recent first)                        |
-| `--json`           | flag   | Output as JSON instead of table                                              |
-
-- All filters are optional and can be combined
-- Account and category names must be exact matches -- always check the cache files first
-- Description search is a case-insensitive partial match (e.g., `--description "walmart"` matches "WALMART SUPERCENTER #1234")
-- Dates must be in `YYYY-MM-DD` format
-- Default sort is by date descending (most recent first)
-- Default limit is 50 rows. Increase with `--limit` if needed.
-
-## Examples
-
-### Get the last 10 transactions from a specific account
-
-```bash
-dinero search --account "Chase Checking" --limit 10
-```
-
-### Find all grocery transactions this year
-
-```bash
-dinero search --subcategory "Groceries" --year 2026
-```
-
-### Search for a specific merchant
-
-```bash
-dinero search --description "netflix"
-```
-
-### Get transactions in a date range
-
-```bash
-dinero search --after "2025-01-01" --before "2025-01-31"
-```
-
-### Get the largest transactions from last month as JSON
-
-```bash
-dinero search --year 2025 --month 12 --sort amount --json
-```
-
-### Combine multiple filters
-
-```bash
-dinero search --account "Chase Checking" --subcategory "Shopping" --after "2025-06-01" --limit 20
-```
+If the service is unavailable, use the local `dinero` CLI. Read `~/.config/dinero/cache/accounts.json` and `categories.json` for valid names; run `dinero build-cache` when those files are absent and local access is authorized. Use `dinero search --json` with `--account`, `--category`, `--subcategory`, `--description`, `--after`, `--before`, `--year`, `--month`, `--limit`, and `--sort` as needed. Description matches are case-insensitive. `--before` includes the named day. Use `dinero balance --account "Checking" --through YYYY-MM-DD --json` for a cumulative amount. CLI search JSON amounts remain numeric; balance amounts are decimal strings. Do not run `transactions`, `import-csv --commit`, or `link` for a read request.

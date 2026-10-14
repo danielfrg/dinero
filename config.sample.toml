@@ -1,3 +1,5 @@
+timezone = "US/Central"
+
 [plaid]
 client_id = ""
 secret = ""
@@ -15,3 +17,10 @@ THIS_IS_A_LONG_ID_2_YYYYYYYYYYYYYYYYYYYYYY = "Bank 2 Credit Card"
 [database]
 connection_string = "sqlite:///data/dinero.db"
 # connection_string = "postgresql+psycopg://user:password@localhost:5432/dinero"
+
+[server]
+host = "127.0.0.1"
+port = 8080
+# For remote access, list the external Host header and any browser origins.
+# allowed_hosts = ["ledger.example.com"]
+# allowed_origins = ["https://app.example.com"]

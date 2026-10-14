@@ -134,14 +134,29 @@ func TestTransactionsJSONAndLegacyYes(t *testing.T) {
 	if n != 0 {
 		t.Fatal("preview wrote")
 	}
-	t.Setenv("DINERO_YES", "1")
-	code, out, stderr = execute("transactions", "--through", "2026-10-14", "--json")
+	code, out, stderr = execute("transactions", "--through", "2026-10-14", "--dry-run", "--yes", "--json")
+	if code != 0 || !strings.Contains(out, "\"new_transactions\":1") {
+		t.Fatalf("explicit dry run %d %q %q", code, out, stderr)
+	}
+	fx.DB.QueryRow("SELECT COUNT(*) FROM transactions").Scan(&n)
+	if n != 0 {
+		t.Fatal("--dry-run --yes wrote")
+	}
+	code, out, stderr = execute("transactions", "--through", "2026-10-14", "--yes", "--json")
 	if code != 0 || !strings.Contains(out, "\"status\":\"imported\"") {
 		t.Fatalf("commit %d %q %q", code, out, stderr)
 	}
 	fx.DB.QueryRow("SELECT COUNT(*) FROM transactions").Scan(&n)
 	if n != 1 {
 		t.Fatal(n)
+	}
+	code, out, stderr = execute("transactions", "--through", "2026-10-14", "--yes", "--json")
+	if code != 0 || !strings.Contains(out, "\"new_transactions\":0") {
+		t.Fatalf("repeat %d %q %q", code, out, stderr)
+	}
+	fx.DB.QueryRow("SELECT COUNT(*) FROM transactions").Scan(&n)
+	if n != 1 {
+		t.Fatal("repeat wrote duplicate", n)
 	}
 }
 

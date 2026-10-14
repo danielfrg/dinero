@@ -1,158 +1,36 @@
 # dinero
 
-Tools and scripts to manage my personal finances.
-Your own Mint/YNAB, self hosted.
+Dinero tracks personal transactions in the existing eight-column SQL ledger. The Go CLI is the deployable executable for read-only REST/MCP service, queries, imports, and scheduled ingestion. The Python package, dashboard, and analysis helpers remain available during the transition.
 
-- [Plaid](https://plaid.com) for collecting transactions from financial institutions
-- SQL Database for storing transactions
-  - I personally use Postgres but any SQLAlchemy compatible DB should work
-  - This README uses SQLite
-  - I use [Mathesar](https://mathesar.org/) as a viewer and editor for Account,
-    Category, and other transaction data
-  - I use [Metabase](https://www.metabase.com/) to create dashboards
-  - Your imagination is the limit here!
-  - You can read more about how I use this + some screenshots [in my wiki](https://wiki.danielfrg.com/homelab/dinero/).
-- Inspired by [yyx990803/build-your-own-mint](https://github.com/yyx990803/build-your-own-mint).
+## Build and configure
 
-## Requirements
+Go 1.25.0 or newer is required by the module. The container and CI use pinned Go 1.27.2. Build locally with `go build -o bin/dinero-go ./cmd/dinero` or `just build`. Copy [config.sample.toml](config.sample.toml) to `~/.config/dinero/config.toml`; `DINERO_CONFIG_FILE` or `--config` selects a different file. PostgreSQL and SQLite URLs use the existing `[database].connection_string` format, including `postgresql+psycopg://` and `sqlite:///`. `DINERO_DATABASE_URL` or `DINERO_DATABASE_URL_FILE` can override the URL for a deployment. The default timezone is `US/Central`.
 
-### Plaid
+Plaid credentials and account mappings remain under `[plaid]`. `dinero config` displays a redacted view. See [bank linking](docs/link.md) for local Link and credential handling. The default service listener is `127.0.0.1:8080`; the image binds `0.0.0.0:8080`. The service needs a separate file named by `DINERO_API_TOKEN_FILE` holding a read token. See [deployment and cutover](docs/deployment.md) for mounts, nonroot permissions, backups, rollout, and rollback.
 
-- Create a [Plaid account](https://dashboard.plaid.com/)
-- You need development access to handle multiple accounts
-  - You can use it on development mode for free up to 100 accounts
-- I asked for production access and it was simple, just fill the form and say
-  you are not a company and that you will use it for personal use
-- Get your `client_id` and `secret` from the [Plaid dashboard](https://dashboard.plaid.com/developers/keys)
+## Commands
 
-#### Logging in to Banks
+`bin/dinero-go --help` lists `config`, `search`, `balance`, `import-csv`, `transactions`, `init-db`, `mkrules`, `build-cache`, `mkdataset`, `link`, and `serve`. Use `--json` where available for one JSON value on stdout. Queries preserve the legacy CLI search number format and decimal-string balance; REST/MCP return decimal strings or null for amounts.
 
-Use the [plaid/quickstart](https://github.com/plaid/quickstart.git)
-to login to your institution.
-
-Once you've linked the bank save the `ACCESS_TOKEN`. in the config file. See [settings](#config) below.
-
-### Database
-
-Simply write the [SQLAlchemy](https://www.sqlalchemy.org) connection string
-in the config file.
-
-## Config
-
-The project reads it's config from `~/.config/dinero/config.toml`.
-You can see a sample in [config.sample.toml](config.sample.toml).
-
-For Plaid you need to set the token for each institution:
-
-```toml
-[plaid.tokens]
-bank_1 = "access-development-XXXXXXXXXXXXXXXX"
-bank_2 = "access-development-YYYYYYYYYYYYYYYY"
+```sh
+bin/dinero-go init-db --yes
+bin/dinero-go search --account "Checking" --description coffee --json
+bin/dinero-go balance --account "Checking" --through 2026-08-31 --json
+bin/dinero-go import-csv transactions.csv "Checking" --json
+bin/dinero-go import-csv transactions.csv "Checking" --commit --yes --json
+bin/dinero-go transactions --dry-run --json
+bin/dinero-go transactions --yes
+bin/dinero-go build-cache
+bin/dinero-go mkrules --commit --yes
+bin/dinero-go mkdataset
 ```
 
-And a mapping to make the Account ID human readable:
+`import-csv` previews by default and writes only with `--commit`; `transactions` previews with `--dry-run` and is run as an explicit scheduled job with `--yes`. Keep only one ingestion writer active. `build-cache` writes account and category JSON under the Dinero state directory; `DINERO_STATE_DIR` selects a disposable location for tests. `mkdataset` exports `data/all.csv` and `data/transactions.db` from the ledger.
 
-```toml
-[plaid.account_id_to_name]
-THIS_IS_A_LONG_ID_1_XXXXXXXXXXXXXXXXXXXXXX = "Bank 1 Checking"
-THIS_IS_A_LONG_ID_2_YYYYYYYYYYYYYYYYYYYYYY = "Bank 2 Credit Card"
-```
+## Read-only API
 
-## Usage
+Start `bin/dinero-go serve` with `DINERO_API_TOKEN_FILE` set. `/healthz` and `/readyz` are probes. Protected REST reads are under `/api`, with OpenAPI at `/api/openapi.json`; MCP uses `/mcp` and six read-only tools. All protected requests need the static bearer read token. See [MCP client setup](docs/mcp.md). The image contains no dashboard; the legacy Python Streamlit dashboard remains in `dashboards/` for existing users.
 
-After you have the requirements and config file.
+## Development
 
-Install by cloning the repo and installing the dependencies using your favorite
-Python environment manager.
-
-Create DB and tables:
-
-```terminal
-dinero init-db
-```
-
-Get new transactions and add them to the database:
-
-```terminal
-dinero transactions
-```
-
-Compute an account's cumulative amount through the end of a date:
-
-```terminal
-dinero balance --account "Bank 1 Checking" --through 2026-08-31
-```
-
-Preview a CSV import. CSV imports are dry runs unless `--commit` is supplied:
-
-```terminal
-dinero import-csv ./transactions.csv "Bank 1 Checking"
-dinero import-csv ./transactions.csv "Bank 1 Checking" --commit
-```
-
-Use `--yes` with `--commit` for an unattended import. Commands that support
-`--json` write only JSON to stdout; diagnostics are written to stderr.
-
-Example output:
-
-```terminal
-2023-09-21 11:06.45 [info     ] Transactions downloaded        name=XXX records=49
-2023-09-21 11:06.45 [info     ] Transactions pending           name=XXX records=1
-2023-09-21 11:06.45 [info     ] Transactions not pending       name=XXX records=48
-2023-09-21 11:06.58 [info     ] Loaded table                   recods=662 year=2023
---------------------------------------------------------------------------------
-My Bank - Checking
---------------------------------------------------------------------------------
-2023-09-21 11:06.58 [info     ] Queried transactions           n=17
-2023-09-21 11:06.58 [info     ] Pending transactions           n=0
-2023-09-21 11:06.58 [info     ] New transactions to be added   n=2
-2023-09-21 11:06.58 [info     ] Transaction                    transaction={'Account': 'Bank of America Checking', 'Amount': XXX, 'Category': '', 'Date': '2023-09-20', 'Description': 'XXXX', 'Subcategory': ''}
-2023-09-21 11:06.58 [info     ] Transaction                    transaction={'Account': 'Bank of America Checking', 'Amount': XXX, 'Category': '', 'Date': '2023-09-20', 'Description': 'XXXX', 'Subcategory': ''}
-2023-09-21 11:06.58 [info     ] Existing transactions          n=15
-2023-09-21 11:06.58 [info     ] Error transactions             n=0
-
-================================================================================
-All accounts summary from 2023-08-22 to 2023-09-21:
-================================================================================
-Using Table for year: 2023
-Records in table: 662
-Transactions queried: 49
-Pending transactions: 1
-Transactions analysed (pending False): 48
-New records to be inserted: 5
-Existing transactions: 43
-Errors transactions (not valid dates for table): 0
-
-Insert transactions to the Table? [Y/n]
-```
-
-Generate a set of simple rules that will be used to categorize transactions:
-
-```terminal
-just rules
-```
-
-Generate a dataset with all transactions in CSV and SQLite:
-
-```terminal
-just dataset
-```
-
-### Other
-
-There is a handy function to generate a Pandas DataFrame with all transactions:
-I use this to do some analysis in a Jupyter Notebook.
-
-```python
-from dinero import analysis
-df = analysis.get_dataframe()
-```
-
-## Contributions
-
-While I am happy to accept any contributions this is 100% tailored to how I use
-it so I might reject stuff I won't use.
-
-If you want to do other things such as connecting to Airtable
-(initially I used Airtable but the new pricing made it not worth it)
-you should fork this repo and make your own changes.
+`just check` runs Go tests, vet and race detection. `just compat` compares independent synthetic Python and Go SQLite fixtures across query, import, cache, rules, and export behavior. Set a synthetic config before collecting Python tests because legacy Python modules load config at import time. The CI job supplies disposable PostgreSQL for store contracts. The existing PyPI workflow remains separate from Go artifact builds.

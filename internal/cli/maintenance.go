@@ -196,7 +196,7 @@ func newTransactionsCommand(deps Dependencies, configPath *string) *cobra.Comman
 		for _, id := range preview.MissingAccountIDs {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Plaid account ID %s has no mapping; add it under [plaid.account_id_to_name]. Using the ID as the account name.\n", id)
 		}
-		if (!commit && !yesEnvironment()) || dryRun || preview.NewTransactions == 0 {
+		if (!commit && !yes && !yesEnvironment()) || dryRun || preview.NewTransactions == 0 {
 			return emit(cmd, jsonOutput, preview, fmt.Sprintf("%d new, %d existing, %d pending; dry run", preview.NewTransactions, preview.ExistingTransactions, preview.PendingTransactions))
 		}
 		if err := confirm(cmd, "Insert new transactions?", yes, jsonOutput); err != nil {

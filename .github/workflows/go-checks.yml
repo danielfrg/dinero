@@ -1,0 +1,88 @@
+name: Go checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: dinero_test
+          POSTGRES_PASSWORD: dinero_test_password
+          POSTGRES_DB: dinero_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U dinero_test -d dinero_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DINERO_TEST_POSTGRES_DSN: postgresql://dinero_test:dinero_test_password@127.0.0.1:5432/dinero_test
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.2'
+      - uses: astral-sh/setup-uv@v6
+      - name: Isolate Python config before collection
+        run: |
+          mkdir -p "$RUNNER_TEMP/dinero-xdg/dinero"
+          cat > "$RUNNER_TEMP/dinero-xdg/dinero/config.toml" <<EOF_CONFIG
+          timezone = "UTC"
+          [plaid]
+          client_id = ""
+          secret = ""
+          env = "development"
+          products = "transactions"
+          [plaid.tokens]
+          [plaid.account_id_to_name]
+          [database]
+          connection_string = "sqlite:///$RUNNER_TEMP/dinero-unused.sqlite"
+          EOF_CONFIG
+          echo "DINERO_CONFIG_FILE=$RUNNER_TEMP/dinero-xdg/dinero/config.toml" >> "$GITHUB_ENV"
+          echo "XDG_CONFIG_HOME=$RUNNER_TEMP/dinero-xdg" >> "$GITHUB_ENV"
+      - name: Python retained consumers
+        run: env -u DINERO_DATABASE_URL -u DINERO_DATABASE_URL_FILE -u DINERO_API_TOKEN_FILE uv run --frozen pytest tests/test_balance.py tests/test_import_csv.py tests/test_config_server.py
+      - name: Go test, PostgreSQL contracts, vet and race
+        run: |
+          go test ./...
+          go vet ./...
+          go test -race ./...
+      - name: Build and compare Python/Go semantics
+        run: |
+          mkdir -p bin
+          CGO_ENABLED=0 go build -o bin/dinero-go ./cmd/dinero
+          env -u DINERO_DATABASE_URL -u DINERO_DATABASE_URL_FILE -u DINERO_API_TOKEN_FILE uv run --frozen python testdata/compat/check.py --go-executable bin/dinero-go
+      - name: Build runtime image
+        run: docker build --build-arg VERSION=ci-${{ github.sha }} -t dinero:ci .
+      - name: Verify runtime image has only Go executable and static base
+        run: |
+          docker image inspect dinero:ci --format '{{.Config.User}} {{json .Config.Entrypoint}}'
+          docker run --rm --entrypoint /dinero dinero:ci --version
+      - name: Smoke nonroot container REST and official MCP SDK
+        run: |
+          mkdir -p "$RUNNER_TEMP/dinero-smoke"
+          python3 - <<'PY'
+          import sqlite3
+          from pathlib import Path
+          import os
+          p = Path(os.environ['RUNNER_TEMP']) / 'dinero-smoke'
+          with sqlite3.connect(p / 'input.sqlite') as db:
+              db.execute('CREATE TABLE transactions (id INTEGER PRIMARY KEY, date DATETIME, description VARCHAR(1000), category VARCHAR(50), subcategory VARCHAR(50), amount DOUBLE, notes VARCHAR(1000), account VARCHAR(50))')
+              db.execute('INSERT INTO transactions VALUES (1,?,?,?,?,?,?,?)', ('2026-09-02 09:00:00', 'Coffee', 'Food', 'Cafe', 4.25, 'synthetic', 'Test Account'))
+          (p / 'config.toml').write_text('timezone = "UTC"\n[database]\nconnection_string = "sqlite:////run/dinero/input.sqlite"\n[server]\nallowed_hosts = ["127.0.0.1", "localhost"]\n')
+          (p / 'read-token').write_text('synthetic-read-token-123456\n')
+          PY
+          chmod 0555 "$RUNNER_TEMP/dinero-smoke"
+          chmod 0444 "$RUNNER_TEMP/dinero-smoke"/*
+          docker run -d --name dinero-ci-smoke -p 127.0.0.1:18080:8080 -e DINERO_CONFIG_FILE=/run/dinero/config.toml -e DINERO_API_TOKEN_FILE=/run/dinero/read-token -v "$RUNNER_TEMP/dinero-smoke:/run/dinero:ro" dinero:ci
+          trap 'docker rm -f dinero-ci-smoke' EXIT
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do curl -fsS http://127.0.0.1:18080/readyz && break || sleep 1; done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/accounts)" = 401
+          curl -fsS -H 'Authorization: Bearer synthetic-read-token-123456' http://127.0.0.1:18080/api/accounts | python3 -c 'import json,sys; assert json.load(sys.stdin)["accounts"][0]["name"] == "Test Account"'
+          DINERO_MCP_URL=http://127.0.0.1:18080/mcp DINERO_API_TOKEN=synthetic-read-token-123456 go run ./testdata/compat/mcp_smoke.go
