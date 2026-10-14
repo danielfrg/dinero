@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -39,6 +40,64 @@ func TestSearchOffsetUsesIDTieBreakAndHasMore(t *testing.T) {
 	page, err := s.Search(context.Background(), ledger.Query{Sort: "date", Limit: 1, Offset: 1, Desc: true})
 	if err != nil || len(page.Transactions) != 1 || page.Transactions[0].ID != 2 || !page.HasMore {
 		t.Fatalf("page %+v %v", page, err)
+	}
+}
+
+func TestBalanceCountsIncompleteAmountsWithinThroughDate(t *testing.T) {
+	for _, kind := range []string{"sqlite", "postgres"} {
+		t.Run(kind, func(t *testing.T) {
+			var fx *testutil.Fixture
+			if kind == "sqlite" {
+				fx = testutil.NewSQLite(t)
+			} else {
+				fx = testutil.NewPostgres(t)
+			}
+			fx.Insert(t, "2026-03-08 12:00:00", "valid", 1.00, "Checking")
+			fx.InsertNullable(t, "2026-03-08 12:00:00", "null", "", "", nil, "Checking", "")
+			fx.Insert(t, "2026-03-08 12:00:00", "subcent", 0.001, "Checking")
+			fx.InsertNullable(t, "2026-03-09 00:00:00", "future null", "", "", nil, "Checking", "")
+			svc := ledger.NewService(fx.Open(t, "UTC"), config.Config{Timezone: "UTC"})
+			b, err := svc.Balance(context.Background(), "Checking", "2026-03-08")
+			if err != nil || b.Amount != "1.00" || b.IncompleteAmountCount != 2 {
+				t.Fatalf("balance %+v %v", b, err)
+			}
+		})
+	}
+}
+
+func TestSummaryPreservesCentAfterLargeCancellation(t *testing.T) {
+	for _, kind := range []string{"sqlite", "postgres"} {
+		t.Run(kind, func(t *testing.T) {
+			var fx *testutil.Fixture
+			if kind == "sqlite" {
+				fx = testutil.NewSQLite(t)
+			} else {
+				fx = testutil.NewPostgres(t)
+			}
+			for _, amount := range []float64{10000000000000000, 0.01, -10000000000000000} {
+				fx.InsertNullable(t, "2026-03-08 12:00:00", "cancellation", "Transfers", "", amount, "Checking", "")
+			}
+			svc := ledger.NewService(fx.Open(t, "UTC"), config.Config{Timezone: "UTC"})
+			summary, err := svc.Summary(context.Background(), ledger.SummaryQuery{GroupBy: "category"})
+			if err != nil || len(summary.Groups) != 1 {
+				t.Fatalf("summary %+v %v", summary, err)
+			}
+			g := summary.Groups[0]
+			if g.SignedTotal != "0.01" || g.Outflows != "10000000000000000.01" || g.Inflows != "-10000000000000000.00" || g.Count != 3 || g.IncompleteAmountCount != 0 {
+				t.Fatalf("group %+v", g)
+			}
+		})
+	}
+}
+
+func TestAccountsRejectsMalformedShortStoredDate(t *testing.T) {
+	fx := testutil.NewSQLite(t)
+	fx.Insert(t, "x", "malformed", 1, "Checking")
+	s := fx.Open(t, "UTC")
+	_, err := s.Accounts(context.Background())
+	var unavailable *ledger.ErrUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("Accounts error %v, want ErrUnavailable", err)
 	}
 }
 

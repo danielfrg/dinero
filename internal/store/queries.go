@@ -110,12 +110,13 @@ func (s *Store) Search(ctx context.Context, q ledger.Query) (ledger.Page, error)
 	if s.dialect == "sqlite" {
 		stmt = strings.ReplaceAll(stmt, "public.transactions", "transactions")
 	}
-	tx, err := s.readTx(ctx)
+	tx, readCtx, cancel, err := s.readTx(ctx)
 	if err != nil {
 		return ledger.Page{}, err
 	}
+	defer cancel()
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, stmt, args...)
+	rows, err := tx.QueryContext(readCtx, stmt, args...)
 	if err != nil {
 		return ledger.Page{}, &ledger.ErrUnavailable{}
 	}
@@ -172,12 +173,13 @@ func (s *Store) Accounts(ctx context.Context) ([]ledger.Account, error) {
 	if s.dialect == "sqlite" {
 		stmt = strings.ReplaceAll(stmt, "public.transactions", "transactions")
 	}
-	tx, err := s.readTx(ctx)
+	tx, readCtx, cancel, err := s.readTx(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer cancel()
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, stmt)
+	rows, err := tx.QueryContext(readCtx, stmt)
 	if err != nil {
 		return nil, &ledger.ErrUnavailable{}
 	}
@@ -190,7 +192,13 @@ func (s *Store) Accounts(ctx context.Context) ([]ledger.Account, error) {
 			return nil, &ledger.ErrUnavailable{}
 		}
 		if latest.Valid {
+			if len(latest.String) < 10 {
+				return nil, &ledger.ErrUnavailable{}
+			}
 			v := latest.String[:10]
+			if _, err = ledger.ParseDay(v, s.loc); err != nil {
+				return nil, &ledger.ErrUnavailable{}
+			}
 			a.LatestDate = &v
 		}
 		out = append(out, a)
@@ -205,10 +213,11 @@ func (s *Store) Accounts(ctx context.Context) ([]ledger.Account, error) {
 }
 func (s *Store) Categories(ctx context.Context) (ledger.Categories, error) {
 	out := ledger.Categories{Categories: []string{}, Subcategories: []string{}, Pairs: []ledger.CategoryPair{}}
-	tx, err := s.readTx(ctx)
+	tx, readCtx, cancel, err := s.readTx(ctx)
 	if err != nil {
 		return out, err
 	}
+	defer cancel()
 	defer tx.Rollback()
 	table := "public.transactions"
 	if s.dialect == "sqlite" {
@@ -218,7 +227,7 @@ func (s *Store) Categories(ctx context.Context) (ledger.Categories, error) {
 		col string
 		dst *[]string
 	}{{"category", &out.Categories}, {"subcategory", &out.Subcategories}} {
-		rows, err := tx.QueryContext(ctx, "SELECT DISTINCT "+spec.col+" FROM "+table+" WHERE "+spec.col+" IS NOT NULL AND "+spec.col+" <> '' ORDER BY "+spec.col)
+		rows, err := tx.QueryContext(readCtx, "SELECT DISTINCT "+spec.col+" FROM "+table+" WHERE "+spec.col+" IS NOT NULL AND "+spec.col+" <> '' ORDER BY "+spec.col)
 		if err != nil {
 			return out, &ledger.ErrUnavailable{}
 		}
@@ -236,7 +245,7 @@ func (s *Store) Categories(ctx context.Context) (ledger.Categories, error) {
 			return out, &ledger.ErrUnavailable{}
 		}
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT DISTINCT category,subcategory FROM "+table+" WHERE category IS NOT NULL AND category <> '' AND subcategory IS NOT NULL AND subcategory <> '' ORDER BY category,subcategory")
+	rows, err := tx.QueryContext(readCtx, "SELECT DISTINCT category,subcategory FROM "+table+" WHERE category IS NOT NULL AND category <> '' AND subcategory IS NOT NULL AND subcategory <> '' ORDER BY category,subcategory")
 	if err != nil {
 		return out, &ledger.ErrUnavailable{}
 	}
@@ -269,18 +278,20 @@ func (s *Store) Balance(ctx context.Context, account, through string) (ledger.Ba
 		table = "transactions"
 		sum = "CAST(COALESCE(SUM(amount),0) AS TEXT)"
 	}
-	stmt := "SELECT " + sum + " FROM " + table + " WHERE account = " + s.placeholder(1) + " AND date < " + s.placeholder(2)
+	stmt := "SELECT " + sum + ",COALESCE(SUM(CASE WHEN " + s.validAmountSQL() + " THEN 0 ELSE 1 END),0) FROM " + table + " WHERE account = " + s.placeholder(1) + " AND date < " + s.placeholder(2)
 	var amount string
-	tx, err := s.readTx(ctx)
+	var incomplete int64
+	tx, readCtx, cancel, err := s.readTx(ctx)
 	if err != nil {
 		return ledger.Balance{}, err
 	}
+	defer cancel()
 	defer tx.Rollback()
-	if err = tx.QueryRowContext(ctx, stmt, account, boundary).Scan(&amount); err != nil {
+	if err = tx.QueryRowContext(readCtx, stmt, account, boundary).Scan(&amount, &incomplete); err != nil {
 		return ledger.Balance{}, &ledger.ErrUnavailable{}
 	}
 	if err = tx.Commit(); err != nil {
 		return ledger.Balance{}, &ledger.ErrUnavailable{}
 	}
-	return ledger.Balance{Account: account, Through: through, Amount: amount}, nil
+	return ledger.Balance{Account: account, Through: through, Amount: amount, IncompleteAmountCount: incomplete}, nil
 }

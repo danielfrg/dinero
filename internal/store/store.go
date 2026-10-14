@@ -80,12 +80,14 @@ func (s *Store) Ping(ctx context.Context) error {
 	}
 	return nil
 }
-func (s *Store) readTx(ctx context.Context) (*sql.Tx, error) {
+func (s *Store) readTx(parent context.Context) (*sql.Tx, context.Context, context.CancelFunc, error) {
+	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return nil, &ledger.ErrUnavailable{}
+		cancel()
+		return nil, nil, nil, &ledger.ErrUnavailable{}
 	}
-	return tx, nil
+	return tx, ctx, cancel, nil
 }
 func (s *Store) WithWriteTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	if s.readOnly {

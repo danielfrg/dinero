@@ -2,9 +2,11 @@ package store_test
 
 import (
 	"context"
+	"math"
+	"testing"
+
 	"github.com/danielfrg/dinero/internal/ledger"
 	"github.com/danielfrg/dinero/internal/testutil"
-	"testing"
 )
 
 func TestPostgresQueries(t *testing.T) {
@@ -20,6 +22,17 @@ func TestPostgresQueries(t *testing.T) {
 	p, err := s.Search(context.Background(), ledger.Query{Before: &before, Limit: 50, Sort: "date"})
 	if err != nil || len(p.Transactions) != 1 || p.Transactions[0].Description != "local closing" {
 		t.Fatalf("search %+v %v", p, err)
+	}
+}
+
+func TestPostgresBalanceCountsNonfiniteWithoutChangingSQLSum(t *testing.T) {
+	fx := testutil.NewPostgres(t)
+	fx.Insert(t, "2026-03-08 12:00:00", "infinite", math.Inf(1), "Checking")
+	fx.InsertNullable(t, "2026-03-08 12:00:00", "nan", "", "", math.NaN(), "Checking", "")
+	s := fx.Open(t, "UTC")
+	b, err := s.Balance(context.Background(), "Checking", "2026-03-08")
+	if err != nil || b.IncompleteAmountCount != 2 || b.Amount != "NaN" {
+		t.Fatalf("balance %+v %v", b, err)
 	}
 }
 
