@@ -13,6 +13,7 @@ import (
 	"github.com/danielfrg/dinero/internal/config"
 	"github.com/danielfrg/dinero/internal/httpapi"
 	"github.com/danielfrg/dinero/internal/ledger"
+	"github.com/danielfrg/dinero/internal/mcp"
 	"github.com/danielfrg/dinero/internal/server"
 	"github.com/danielfrg/dinero/internal/store"
 	"github.com/spf13/cobra"
@@ -57,7 +58,8 @@ func newServeCommand(deps Dependencies, configPath *string) *cobra.Command {
 		}
 		defer db.Close()
 		svc := ledger.NewService(db, cfg)
-		handler := server.NewHandler(svc, httpapi.Options{Token: token, AllowedHosts: cfg.Server.AllowedHosts, AllowedOrigins: cfg.Server.AllowedOrigins}, nil)
+		policy := httpapi.Options{Token: token, AllowedHosts: cfg.Server.AllowedHosts, AllowedOrigins: cfg.Server.AllowedOrigins}
+		handler := server.NewHandler(svc, policy, mcp.NewTransportHandler(svc))
 		addr := net.JoinHostPort(host, strconv.Itoa(port))
 		listener, err := deps.Listen("tcp", addr)
 		if err != nil {
