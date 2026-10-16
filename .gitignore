@@ -19,3 +19,18 @@ config.toml
 # Local logs and OS metadata
 *.log
 .DS_Store
+
+# Local agent work and design tooling
+.opencode/
+.impeccable/
+.superpowers/
+.worktrees/
+/docs/superpowers/
+/docs/plans/
+/docs/specs/
+/docs/*report*.md
+/docs/local-execution.md
+
+# Local environment overrides
+.env.*
+!.env.example

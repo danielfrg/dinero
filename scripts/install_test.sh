@@ -120,7 +120,8 @@ expect_failure() {
         *) fail "missing useful error mentioning $1" ;;
     esac
     [ "$(cat "$DINERO_INSTALL_DIR/dinero")" = 'existing dinero' ] || fail 'existing binary changed'
-    [ "$(ls -l "$DINERO_INSTALL_DIR/dinero" | awk '{print $1}')" = '-rw-r-----' ] || fail 'existing mode changed'
+    # BSD ls appends @ or + for extended attributes/ACLs after the mode bits.
+    [ "$(ls -l "$DINERO_INSTALL_DIR/dinero" | awk '{print substr($1, 1, 10)}')" = '-rw-r-----' ] || fail 'existing mode changed'
     [ "$(find "$DINERO_INSTALL_DIR" -type f | wc -l | tr -d ' ')" = 1 ] || fail 'installation temporary file leaked'
     pass
 }
