@@ -1,10 +1,33 @@
 # Dinero
 
-Personal finance tools for collecting transactions through Plaid or CSV, storing
-them in SQLite or PostgreSQL, and reading them through a CLI, REST API, or MCP.
-Use database tools such as Mathesar or Metabase for editing and dashboards.
+A personal finance ledger. Ready for self-hosting.
+
+Collect bank transactions through Plaid or CSV, store them in SQLite or
+PostgreSQL, and read them through a CLI, REST API, or MCP. 
+
+For dashboards or editing, connect external tools like Mathesar and Metabase.
 
 ## Installation
+
+### Docker
+
+Prepare `container-config/config.toml` with your database connection, then run:
+
+```zsh
+docker run -it \
+  -p 127.0.0.1:8080:8080 \
+  -e DINERO_CONFIG_FILE=/run/dinero/config.toml \
+  --mount "type=bind,src=${PWD}/container-config,dst=/run/dinero,readonly" \
+  ghcr.io/danielfrg/dinero:latest
+```
+
+- The image serves read-only REST and MCP on port 8080
+- The container runs as UID/GID 65532
+- For SQLite, mount an existing initialized database and use its container
+  path, such as `sqlite:////run/dinero/dinero.db`. The server does not create
+  or migrate the ledger.
+
+Published images support Linux AMD64 and ARM64. `latest` tracks `main`.
 
 ### Standalone
 
@@ -24,27 +47,6 @@ curl -fsSL https://github.com/danielfrg/dinero/releases/download/main-latest/ins
 
 You can also [build from source](#build).
 
-### Docker
-
-Prepare `container-config/config.toml` with your database connection, then run:
-
-```zsh
-docker run -d --name dinero \
-  -p 127.0.0.1:8080:8080 \
-  -e DINERO_CONFIG_FILE=/run/dinero/config.toml \
-  --mount "type=bind,src=${PWD}/container-config,dst=/run/dinero,readonly" \
-  ghcr.io/danielfrg/dinero:latest
-```
-
-The image serves REST and MCP on port 8080 as UID/GID 65532. Mounted configuration
-and data must be readable by that user. For SQLite, mount an existing initialized
-database and use its container path, such as `sqlite:////run/dinero/dinero.db`.
-The server does not create or migrate the ledger.
-
-Images support Linux AMD64 and ARM64. `latest` follows published `main` builds;
-`sha-<commit>` tags and digests pin exact images. Versioned releases also publish
-version tags.
-
 ## Usage
 
 ### Read the ledger
@@ -62,15 +64,15 @@ illustrates the source format.
 
 ### Connect and import
 
-Set your Plaid credentials in the configuration, then connect or repair an Item:
+Set your Plaid credentials in the configuration, then connect or repair an
+Item with the Hosted Link flow:
 
 ```zsh
 dinero link bank
 dinero link --update bank
 ```
 
-Follow the Hosted Link flow with your institution. Preview transactions before
-committing them to the database:
+Preview transactions before committing them to the database:
 
 ```zsh
 dinero transactions
@@ -97,21 +99,23 @@ dinero serve
 The default address is [http://127.0.0.1:8080](http://127.0.0.1:8080).
 REST reads are under `/api`, interactive documentation is at `/api/docs`, and
 OpenAPI is at `/api/openapi.json`. MCP uses Streamable HTTP at `/mcp` with six
-read-only tools. [SKILL.md](SKILL.md) describes how agents should use these reads.
-
-REST and MCP do not require an API token or Authorization header. Run them on a
-trusted network or behind an authenticated proxy. Configure allowed hosts and
-browser origins when using a remote hostname. Neither interface can ingest bank
-transactions or change the ledger.
+read-only tools. [SKILL.md](SKILL.md) describes how agents should use these
+reads. Neither interface can ingest bank transactions or change the ledger.
 
 Liveness is `/healthz`; readiness is `/readyz`. Readiness checks access to the
 ledger without making Plaid requests.
 
+### Security
+
+REST and MCP do not require an API token or Authorization header: run them on
+a trusted network or behind an authenticated proxy.
+
 ## Configuration
 
-Copy [config.sample.toml](config.sample.toml) to `~/.config/dinero/config.toml`.
-Use `--config` or `DINERO_CONFIG_FILE` to select another file. Read-only commands
-need database configuration; Plaid credentials are required only for Plaid operations.
+Copy [config.sample.toml](config.sample.toml) to `~/.config/dinero/config.toml`,
+or select another file with `--config` or `DINERO_CONFIG_FILE`. Read-only
+commands need database configuration; Plaid credentials are required only for
+Plaid operations.
 
 ```toml
 timezone = "US/Central"
@@ -126,25 +130,24 @@ port = 8080
 # allowed_origins = ["https://app.example.com"]
 ```
 
-Both SQLite URLs and PostgreSQL URLs, including `postgresql+psycopg://`, are
-supported. Relative SQLite paths resolve from the working directory. Keep local
-configuration, tokens, recovery files, and ledgers out of Git.
+| Variable                   | Default                                         |
+| -------------------------- | ----------------------------------------------- |
+| `DINERO_CONFIG_FILE`       | `~/.config/dinero/config.toml`                  |
+| `DINERO_DATABASE_URL`      | unset (uses the configured connection string)   |
+| `DINERO_DATABASE_URL_FILE` | unset (reads the connection string from a file) |
 
-| Variable | Purpose |
-| --- | --- |
-| `DINERO_CONFIG_FILE` | Override the configuration file path |
-| `DINERO_DATABASE_URL` | Override the configured database connection |
-| `DINERO_DATABASE_URL_FILE` | Read the database connection from a file |
-
-Set only one database URL override. `dinero config` prints configuration with
-secrets redacted. See the sample file for Plaid credentials, Item aliases, and
-account-name mappings. `serve --host` and `--port` override the configured listener.
+Set only one database URL override. Both SQLite and PostgreSQL URLs, including
+`postgresql+psycopg://`, are supported; relative SQLite paths resolve from the
+working directory. `dinero config` prints configuration with secrets redacted,
+and `serve --host` and `--port` override the configured listener. See the
+sample file for Plaid credentials, Item aliases, and account-name mappings.
+Keep local configuration, tokens, recovery files, and ledgers out of Git.
 
 ## Development
 
-Use Go matching the version pinned in the Dockerfile and CI, plus just.
+Requires Go matching the version pinned in the Dockerfile and CI, plus just.
 
-```zsh
+```shell
 just install
 just check
 ```
@@ -155,23 +158,8 @@ a disposable test database; otherwise those tests skip. Use synthetic fixtures
 and temporary configuration rather than real bank accounts or personal ledgers.
 
 `just api` runs the read-only server using your selected local configuration.
-There is no frontend development server. The project structure is:
-
-```text
-cmd/dinero/       Executable entry point
-internal/cli/     CLI commands and output
-internal/ledger/  Shared query and validation rules
-internal/store/   SQLite and PostgreSQL persistence
-internal/httpapi/ REST and OpenAPI
-internal/mcp/     Read-only MCP tools
-internal/server/  Transport wiring and lifecycle
-scripts/          Installer, release packaging, and container smoke tests
-testdata/compat/  Synthetic compatibility fixtures
-```
-
-`PRODUCT.md` describes users and purpose; `DESIGN.md` records interface contracts;
-`AGENTS.md` gives contributors the working rules. Keep plans, agent reports, and
-local tooling state uncommitted.
+Run `just check` before sending changes. See `AGENTS.md` for project structure
+and conventions.
 
 ## Build
 
@@ -180,13 +168,8 @@ just build
 ./bin/dinero --version
 ```
 
-The standalone executable needs no frontend or language runtime. Build and
-smoke-test the container with:
+The standalone executable needs no language runtime.
 
 ```zsh
 just image-check
 ```
-
-The smoke test uses synthetic data to verify nonroot/read-only operation, REST,
-MCP, probes, and graceful shutdown. Release archives and version injection use
-the existing scripts under `scripts/`.
