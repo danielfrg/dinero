@@ -32,7 +32,7 @@ jobs:
         run: |
           bash scripts/install_test.sh
           bash scripts/package_test.sh
-          bash scripts/publish-main_test.sh
+          bash scripts/build-pages_test.sh
       - name: Go test, PostgreSQL contracts, vet and race
         run: |
           go test ./...
