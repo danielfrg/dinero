@@ -17,7 +17,7 @@ check:
     go vet ./...
     bash scripts/install_test.sh
     bash scripts/package_test.sh
-    bash scripts/publish-main_test.sh
+    bash scripts/build-pages_test.sh
 
 transactions: build
     bin/dinero transactions --yes
