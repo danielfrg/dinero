@@ -41,7 +41,7 @@ dinero --version
 To install the newest published build from `main`:
 
 ```zsh
-curl -fsSL https://github.com/danielfrg/dinero/releases/download/main-latest/install.sh \
+curl -fsSL https://danielfrg.github.io/dinero/main/install.sh \
   | DINERO_CHANNEL=main bash
 ```
 

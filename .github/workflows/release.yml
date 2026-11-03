@@ -73,7 +73,7 @@ jobs:
         run: |
           bash scripts/install_test.sh
           bash scripts/package_test.sh
-          bash scripts/publish-main_test.sh
+          bash scripts/build-pages_test.sh
   binaries:
     needs: [metadata, checks]
     runs-on: ubuntu-latest
@@ -326,24 +326,53 @@ jobs:
           fi
           gh release create "$VERSION" dist/*.tar.gz dist/SHA256SUMS dist/install.sh "${release_flags[@]}"
   publish-main:
-    if: needs.metadata.outputs.channel == 'main'
+    # The unstable main channel is served from GitHub Pages; no rolling tag or release.
+    if: needs.metadata.outputs.channel == 'main' && github.repository == 'danielfrg/dinero'
     needs: [metadata, assets]
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
+      - name: Skip stale main builds
+        id: current
+        env:
+          BUILD_SHA: ${{ needs.metadata.outputs.commit }}
+        run: |
+          if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$BUILD_SHA" ]]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Main advanced; skipping stale Pages deploy.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'current=false' >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/download-artifact@v4
+        if: steps.current.outputs.current == 'true'
         with:
           name: dinero-release
           path: dist/
-      - name: Update rolling main prerelease
+      - name: Build Pages site
+        if: steps.current.outputs.current == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.metadata.outputs.version }}
           BUILD_SHA: ${{ needs.metadata.outputs.commit }}
-        run: bash scripts/publish-main.sh "$VERSION" "$BUILD_SHA" dist
+        run: bash scripts/build-pages.sh "$VERSION" "$BUILD_SHA" dist _site
+      - uses: actions/configure-pages@v5
+        if: steps.current.outputs.current == 'true'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.current.outputs.current == 'true'
+        with:
+          path: _site
+      - uses: actions/deploy-pages@v4
+        if: steps.current.outputs.current == 'true'
+        id: deployment

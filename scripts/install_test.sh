@@ -25,14 +25,23 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 base='https://github.com/danielfrg/dinero/releases'
+pages='https://danielfrg.github.io/dinero/main'
 case "$url" in
     "$base/latest")
         [ "${DINERO_CHANNEL:-stable}" != main ] || { printf 'Main must not resolve latest\n' >&2; exit 22; }
         printf '%s' "$FAKE_LATEST_URL"
         ;;
-    "$base/download/main-latest/VERSION")
+    "$pages/VERSION")
         [ "${FAKE_VERSION_FAIL:-0}" = 0 ] || exit 22
         printf '%s\n' "$FAKE_VERSION_TEXT"
+        ;;
+    "$pages/$FAKE_ASSET")
+        [ "${FAKE_ARCHIVE_FAIL:-0}" = 0 ] || exit 22
+        "$REAL_CP" "$FIXTURE_ARCHIVE" "$output"
+        ;;
+    "$pages/SHA256SUMS")
+        [ "${FAKE_SUMS_FAIL:-0}" = 0 ] || exit 22
+        "$REAL_CP" "$FIXTURE_SUMS" "$output"
         ;;
     "$base/download/$FAKE_TAG/$FAKE_ASSET")
         [ "${FAKE_ARCHIVE_FAIL:-0}" = 0 ] || exit 22
@@ -147,15 +156,15 @@ new_case explicit_stable_pinned Linux x86_64 v1.2.3 dinero_1.2.3_linux_amd64.tar
 export DINERO_CHANNEL=stable DINERO_VERSION=1.2.3
 expect_success
 
-new_case latest_main Linux x86_64 main-latest dinero_0.0.0-main.g012345abcdef_linux_amd64.tar.gz
+new_case latest_main Linux x86_64 main dinero_0.0.0-main.g012345abcdef_linux_amd64.tar.gz
 export DINERO_CHANNEL=main FAKE_VERSION_TEXT=v0.0.0-main.g012345abcdef
 expect_success
 
-new_case missing_main_version Linux x86_64 main-latest dinero_0.0.0-main.g012345abcdef_linux_amd64.tar.gz
+new_case missing_main_version Linux x86_64 main dinero_0.0.0-main.g012345abcdef_linux_amd64.tar.gz
 export DINERO_CHANNEL=main FAKE_VERSION_FAIL=1
 expect_failure 'VERSION'
 for bad_main_version in '../unsafe' '' $'v0.0.0-main.g012345abcdef\nv1.2.3'; do
-    new_case "malformed_main_version_$PASSED" Linux x86_64 main-latest dinero_0.0.0-main.g012345abcdef_linux_amd64.tar.gz
+    new_case "malformed_main_version_$PASSED" Linux x86_64 main dinero_0.0.0-main.g012345abcdef_linux_amd64.tar.gz
     export DINERO_CHANNEL=main FAKE_VERSION_TEXT="$bad_main_version"
     expect_failure 'version'
 done
@@ -165,11 +174,11 @@ for bad_channel in nightly MAIN ''; do
     expect_failure 'DINERO_CHANNEL'
 done
 for pinned_version in v1.2.3 ''; do
-    new_case "main_version_conflict_$PASSED" Linux x86_64 main-latest dinero_0.0.0-main.g012345abcdef_linux_amd64.tar.gz
+    new_case "main_version_conflict_$PASSED" Linux x86_64 main dinero_0.0.0-main.g012345abcdef_linux_amd64.tar.gz
     export DINERO_CHANNEL=main DINERO_VERSION="$pinned_version"
     expect_failure 'DINERO_VERSION'
 done
-new_case main_bad_checksum Linux x86_64 main-latest dinero_0.0.0-main.g012345abcdef_linux_amd64.tar.gz
+new_case main_bad_checksum Linux x86_64 main dinero_0.0.0-main.g012345abcdef_linux_amd64.tar.gz
 export DINERO_CHANNEL=main FAKE_VERSION_TEXT=v0.0.0-main.g012345abcdef
 printf '%064d  %s\n' 0 "$FAKE_ASSET" > "$FIXTURE_SUMS"
 expect_failure 'checksum'

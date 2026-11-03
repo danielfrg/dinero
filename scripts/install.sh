@@ -1,7 +1,7 @@
 #!/bin/bash
 # Install a verified GitHub release of Dinero on macOS or Linux.
 # curl -fsSL https://github.com/danielfrg/dinero/releases/latest/download/install.sh | bash
-# Main builds: curl -fsSL https://github.com/danielfrg/dinero/releases/download/main-latest/install.sh | DINERO_CHANNEL=main bash
+# Main builds: curl -fsSL https://danielfrg.github.io/dinero/main/install.sh | DINERO_CHANNEL=main bash
 # Optional: DINERO_VERSION=1.2.3 DINERO_INSTALL_DIR="$HOME/.local/bin"
 
 dinero_error() {
@@ -98,10 +98,10 @@ main() (
         *) dinero_error "Unsupported architecture: $arch. Dinero supports amd64 and arm64."; return 1 ;;
     esac
     if [ "$channel" = main ]; then
-        base_url='https://github.com/danielfrg/dinero/releases/download/main-latest'
+        base_url='https://danielfrg.github.io/dinero/main'
         printf 'Finding the newest Dinero main build...\n'
         release_version=$(curl -fsSL "$base_url/VERSION") || {
-            dinero_error 'Failed to download VERSION for the main build. Check https://github.com/danielfrg/dinero/releases/tag/main-latest.'
+            dinero_error 'Failed to download VERSION for the main build. Check https://danielfrg.github.io/dinero/.'
             return 1
         }
         version=$(dinero_version "$release_version") || return 1
