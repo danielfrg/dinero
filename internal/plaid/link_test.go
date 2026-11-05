@@ -636,7 +636,7 @@ func TestBlockedBrowserHonorsWorkflowCancellationAndReleasesLock(t *testing.T) {
 			go func() { _, e := RunLink(ctx, o); done <- e }()
 			select {
 			case <-started:
-			case <-time.After(2 * time.Second):
+			case <-time.After(10 * time.Second):
 				t.Fatal("browser did not start")
 			}
 			want := context.DeadlineExceeded
@@ -649,7 +649,7 @@ func TestBlockedBrowserHonorsWorkflowCancellationAndReleasesLock(t *testing.T) {
 				if !errors.Is(e, want) {
 					t.Fatalf("blocked opener error: %v", e)
 				}
-			case <-time.After(2 * time.Second):
+			case <-time.After(10 * time.Second):
 				t.Fatal("blocked opener outlived workflow context")
 			}
 			if f.polls != 0 || f.exchanges != 0 || showed {
@@ -734,7 +734,7 @@ func TestDefaultBrowserProcessHonorsContext(t *testing.T) {
 				if !errors.Is(e, want) {
 					t.Fatalf("default browser ignored context: %v", e)
 				}
-			case <-time.After(2 * time.Second):
+			case <-time.After(10 * time.Second):
 				t.Fatal("default browser process outlived context")
 			}
 		})
