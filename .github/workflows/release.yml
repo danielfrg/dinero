@@ -26,7 +26,7 @@ jobs:
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.release.outputs.version }}
       commit: ${{ steps.release.outputs.commit }}
@@ -59,7 +59,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        runner: [ubuntu-latest, macos-latest]
+        runner: [ubuntu-24.04, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -76,7 +76,7 @@ jobs:
           bash scripts/build-pages_test.sh
   binaries:
     needs: [metadata, checks]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -97,7 +97,7 @@ jobs:
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
           bash scripts/package.sh "$VERSION" "$GOOS" "$GOARCH"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dinero-package-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/
@@ -278,12 +278,12 @@ jobs:
           printf '\nTags:\n```\n%s\n```\n' "$IMAGE_TAGS" >> "$GITHUB_STEP_SUMMARY"
   assets:
     needs: [metadata, binaries, image]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.metadata.outputs.commit }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: dinero-package-*
           merge-multiple: true
@@ -297,7 +297,7 @@ jobs:
           cp scripts/install.sh dist/install.sh
           printf '%s\n' "$VERSION" > dist/VERSION
           rm dist/*.tar.gz.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dinero-release
           path: dist/
@@ -305,11 +305,11 @@ jobs:
   publish:
     if: needs.metadata.outputs.channel == 'release'
     needs: [metadata, assets]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dinero-release
           path: dist/
@@ -329,7 +329,7 @@ jobs:
     # The unstable main channel is served from GitHub Pages; no rolling tag or release.
     if: needs.metadata.outputs.channel == 'main' && github.repository == 'danielfrg/dinero'
     needs: [metadata, assets]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pages: write
@@ -356,7 +356,7 @@ jobs:
             echo 'Main advanced; skipping stale Pages deploy.' >> "$GITHUB_STEP_SUMMARY"
             echo 'current=false' >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.current.outputs.current == 'true'
         with:
           name: dinero-release
@@ -367,12 +367,12 @@ jobs:
           VERSION: ${{ needs.metadata.outputs.version }}
           BUILD_SHA: ${{ needs.metadata.outputs.commit }}
         run: bash scripts/build-pages.sh "$VERSION" "$BUILD_SHA" dist _site
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
         if: steps.current.outputs.current == 'true'
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         if: steps.current.outputs.current == 'true'
         with:
           path: _site
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v5
         if: steps.current.outputs.current == 'true'
         id: deployment
