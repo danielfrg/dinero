@@ -23,9 +23,7 @@ config.toml
 # Local agent work and design tooling
 .opencode/
 .impeccable/
-.superpowers/
 .worktrees/
-/docs/superpowers/
 /docs/plans/
 /docs/specs/
 /docs/*report*.md
