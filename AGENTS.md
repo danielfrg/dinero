@@ -58,7 +58,3 @@ agent/design-tool state.
 The container smoke test uses synthetic data to verify nonroot/read-only
 operation, REST, MCP, probes, and graceful shutdown. Release archives and
 version injection use the existing scripts under `scripts/`.
-
-## Deployment
-
-Daniel (danielfrg/danrodriguez) deploys this service in his homelab; the deployment source is in `~/code/danielfrg/homelab`.
