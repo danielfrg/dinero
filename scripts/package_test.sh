@@ -22,7 +22,7 @@ bash "$repo_dir/scripts/package.sh" "$version" "$platform_os" "$platform_arch" "
 mkdir "$work_dir/extracted"
 tar -xzf "$work_dir/packages/$archive" -C "$work_dir/extracted"
 [ -f "$work_dir/extracted/dinero" ] && [ -x "$work_dir/extracted/dinero" ]
-[ -f "$work_dir/extracted/LICENSE.txt" ]
+[ -f "$work_dir/extracted/LICENSE" ]
 [ -f "$work_dir/extracted/README.md" ]
 [ "$("$work_dir/extracted/dinero" --version)" = "dinero version $version" ]
 if command -v sha256sum >/dev/null 2>&1; then

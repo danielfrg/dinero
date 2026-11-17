@@ -1,7 +1,7 @@
 **
 !go.mod
 !go.sum
-!LICENSE.txt
+!LICENSE
 !cmd/
 !cmd/**
 !internal/
