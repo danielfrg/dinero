@@ -7,6 +7,8 @@ PostgreSQL, and read them through a CLI, REST API, or MCP.
 
 For dashboards or editing, connect external tools like Mathesar and Metabase.
 
+**Personal project**: This is completely vibe coded for my own personal use. I won't be accepting feature requests or PRs. You're welcome to fork it and make it your own.
+
 ## Installation
 
 ### Docker

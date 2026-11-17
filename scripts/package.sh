@@ -49,10 +49,10 @@ trap cleanup EXIT
 (cd "$repo_dir" && CGO_ENABLED=0 GOOS="$platform_os" GOARCH="$platform_arch" \
     go build -trimpath -ldflags="-s -w -X github.com/danielfrg/dinero/internal/cli.Version=$version" \
     -o "$stage_dir/dinero" ./cmd/dinero)
-cp "$repo_dir/LICENSE.txt" "$repo_dir/README.md" "$stage_dir/"
+cp "$repo_dir/LICENSE" "$repo_dir/README.md" "$stage_dir/"
 archive="dinero_${version#v}_${platform_os}_${platform_arch}.tar.gz"
 archive_temp=$(mktemp "$output_dir/.dinero-package.XXXXXX")
-COPYFILE_DISABLE=1 tar -czf "$archive_temp" -C "$stage_dir" dinero LICENSE.txt README.md
+COPYFILE_DISABLE=1 tar -czf "$archive_temp" -C "$stage_dir" dinero LICENSE README.md
 checksum_temp=$(mktemp "$output_dir/.dinero-checksum.XXXXXX")
 if command -v sha256sum >/dev/null 2>&1; then
     digest=$(sha256sum "$archive_temp")
